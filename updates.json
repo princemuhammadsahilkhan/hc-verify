@@ -1,0 +1,77 @@
+{
+  "range": "yesterday_to_now",
+  "notes": "Summary of changes discussed/applied in this workspace, including items later undone.",
+  "updates": [
+    {
+      "title": "Results page uses live /results API",
+      "description": "Replaced mock results on ResultsPage with live API fetch so counts match HomePage.",
+      "status": "applied_then_undone",
+      "files": [
+        "frontend/src/pages/ResultsPage.jsx"
+      ]
+    },
+    {
+      "title": "Registration persistence expiration",
+      "description": "Added and then removed a registration expiration concept to allow re-registration after a time window.",
+      "status": "applied_then_undone",
+      "files": [
+        "backend/main.py",
+        "backend/app/models.py"
+      ]
+    },
+    {
+      "title": "Voter ID recovery on re-registration",
+      "description": "Updated /register to return existing voter_id for the same identity if not voted.",
+      "status": "applied_then_undone",
+      "files": [
+        "backend/main.py"
+      ]
+    },
+    {
+      "title": "Liveness verification gate UI",
+      "description": "Added a simulated verification modal (camera prompt + steps) before registration in the frontend.",
+      "status": "applied_then_undone",
+      "files": [
+        "frontend/src/pages/RegisterPage.jsx"
+      ]
+    },
+    {
+      "title": "Face verification integration (face-api.js)",
+      "description": "Integrated face-api.js in the frontend and added face embedding handling and matching logic in the backend.",
+      "status": "applied_then_undone",
+      "files": [
+        "frontend/src/pages/RegisterPage.jsx",
+        "frontend/package.json",
+        "backend/main.py",
+        "backend/app/models.py",
+        "backend/app/schemas.py"
+      ]
+    },
+    {
+      "title": "Model loading and camera handling fixes",
+      "description": "Added secure context checks, model loading safeguards, timeouts, and optional CDN model paths for face verification.",
+      "status": "applied_then_undone",
+      "files": [
+        "frontend/src/pages/RegisterPage.jsx",
+        "frontend/public/models/README.txt"
+      ]
+    },
+    {
+      "title": "Verification modal sizing",
+      "description": "Adjusted verification modal sizing to fit within the viewport using a dedicated CSS class.",
+      "status": "applied_then_undone",
+      "files": [
+        "frontend/src/index.css",
+        "frontend/src/pages/RegisterPage.jsx"
+      ]
+    },
+    {
+      "title": "Root README created",
+      "description": "Generated a project README documenting architecture, features, setup, and endpoints.",
+      "status": "applied",
+      "files": [
+        "README.md"
+      ]
+    }
+  ]
+}
