@@ -1,0 +1,7 @@
+HC-VERIFY ADMIN RECOVERY KEY
+Generated: 2026-05-21T10:31:48.591770
+
+KEY: RCVR-feeGWKeIsF21cu5WhoobG92DPwiJYxXkCP28WAAyu2g
+
+Keep this file OFFLINE and SECURE.
+Use it at /admin/recover endpoint if locked out.

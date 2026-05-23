@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import Navbar from "./components/Navbar";
 
 import HomePage from "./pages/HomePage";
+import LandingPage from "./pages/LandingPage";
 import RegisterPage from "./pages/RegisterPage";
 import VotePage from "./pages/VotePage";
 import VerifyPage from "./pages/VerifyPage";
@@ -33,7 +34,8 @@ function App() {
       <Navbar />
 
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/home" element={<HomePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/vote" element={<VotePage />} />
         <Route path="/verify" element={<VerifyPage />} />

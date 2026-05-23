@@ -33,6 +33,14 @@ class Voter(Base):
 
     is_verified = Column(Boolean, default=True)
 
+    # Face recognition
+    face_embedding = Column(Text, nullable=True)  # JSON string of embedding vector
+
+    # Pending investigation (face mismatch at voting time)
+    is_pending = Column(Boolean, default=False)
+
+    pending_reason = Column(String, nullable=True)
+
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now()

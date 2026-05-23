@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   BadgeCheck,
@@ -50,15 +50,11 @@ function VotePage() {
 
     try {
 
-      const response = await API.get(
-
-        `/authenticate/${voterId}`
-      );
+      const response = await API.get(`/authenticate/${voterId}`);
 
       if (response.data.success) {
 
         setAuthenticated(true);
-
         loadCandidates();
 
       } else {
@@ -73,6 +69,8 @@ function VotePage() {
       toast.error("Authentication failed. Please try again.");
     }
   };
+
+
 
 
   // =====================================
@@ -360,6 +358,8 @@ function VotePage() {
       </div>
     );
   }
+
+
 
 
   // =====================================

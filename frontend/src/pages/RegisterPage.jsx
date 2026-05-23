@@ -4,6 +4,7 @@ import { ShieldCheck, UserPlus, IdCard, Phone, MapPin } from "lucide-react";
 
 import API from "../api";
 import { LivenessDetector } from "../services/livenessDetector";
+import { captureFrameFromVideo } from "../services/faceCapture";
 
 // ─────────────────────────────────────────────────────────────
 // Liveness steps config — matches the existing UI steps exactly
@@ -88,7 +89,11 @@ function RegisterPage() {
       aiLoading: false,
       aiError: "",
       stepDone: false,
+      faceChecking: false,
+      faceError: "",
     });
+    // Auto-start camera immediately
+    setTimeout(() => requestCamera(), 100);
   };
 
   const closeVerification = useCallback(() => {
@@ -108,6 +113,7 @@ function RegisterPage() {
       ...prev,
       checking: true,
       cameraError: "",
+      faceError: "",
     }));
 
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -133,11 +139,49 @@ function RegisterPage() {
         });
       }
 
-      // Camera is ready — now load AI models
+      // Camera ready — wait 2s for video to stream, then check face
       setVerification((prev) => ({
         ...prev,
         checking: false,
         cameraReady: true,
+        faceChecking: true,
+      }));
+
+      // Wait for video to fully stream (3 seconds)
+      await new Promise((res) => setTimeout(res, 3000));
+
+      // Wait for video to be fully ready
+      await new Promise((res) => {
+        const vid = videoRef.current;
+        const check = () => {
+          if (vid && vid.readyState >= 3 && vid.videoWidth > 0) res();
+          else setTimeout(check, 200);
+        };
+        check();
+      });
+
+      // Extra buffer for stable frame
+      await new Promise((res) => setTimeout(res, 1000));
+
+      const frame = captureFrameFromVideo(videoRef.current);
+      try {
+        const checkRes = await API.post("/check-face", { face_image: frame });
+        if (checkRes.data.exists) {
+          setVerification((prev) => ({
+            ...prev,
+            faceChecking: false,
+            faceError: checkRes.data.message,
+          }));
+          return;
+        }
+      } catch (e) {
+        console.warn("Face check failed, proceeding:", e);
+      }
+
+      // Face not found — start liveness
+      setVerification((prev) => ({
+        ...prev,
+        faceChecking: false,
         step: 1,
         aiLoading: true,
         aiError: "",
@@ -245,8 +289,10 @@ function RegisterPage() {
   };
 
   const handleCompleteVerification = async () => {
+    // Capture face frame before closing camera
+    const faceImage = captureFrameFromVideo(videoRef.current);
     closeVerification();
-    const registered = await register();
+    const registered = await register(faceImage);
     if (registered) {
       setTimeout(() => {
         voterIdRef.current?.scrollIntoView({
@@ -369,7 +415,7 @@ function RegisterPage() {
   // REGISTER FUNCTION  (unchanged)
   // =====================================
 
-  const register = async () => {
+  const register = async (faceImage = null) => {
 
     try {
 
@@ -389,6 +435,18 @@ function RegisterPage() {
         message: response.data.message,
         detail: response.data.voter_id
       });
+
+      // Send face embedding to backend
+      if (faceImage && response.data.voter_id) {
+        try {
+          await API.post("/register-face", {
+            voter_id: response.data.voter_id,
+            face_image: faceImage,
+          });
+        } catch (faceErr) {
+          console.warn("Face registration failed (non-critical):", faceErr);
+        }
+      }
 
       return true;
 
@@ -702,6 +760,19 @@ function RegisterPage() {
                     }}
                   />
 
+                  {/* Face duplicate error */}
+                  {verification.faceChecking && (
+                    <div className="helper-text" style={{ display: "flex", gap: 8 }}>
+                      <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                      Checking face...
+                    </div>
+                  )}
+                  {verification.faceError && (
+                    <div className="helper-text" style={{ color: "var(--danger)", fontWeight: 600 }}>
+                      ⚠ {verification.faceError}
+                    </div>
+                  )}
+
                   {/* Camera error */}
                   {verification.cameraError && (
                     <div className="helper-text">
@@ -716,14 +787,12 @@ function RegisterPage() {
                     </div>
                   )}
 
-                  {/* STEP 0 — Start camera (unchanged) */}
+                  {/* STEP 0 — Auto scanning face */}
                   {verification.step === 0 && (
-                    <button
-                      className={`button${verification.checking ? " is-loading" : ""}`}
-                      onClick={requestCamera}
-                    >
-                      {verification.checking ? "Requesting..." : "Start camera check"}
-                    </button>
+                    <div className="helper-text" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                      {verification.faceChecking ? "Scanning your face..." : "Starting camera..."}
+                    </div>
                   )}
 
                   {/* STEPS 1–5 — AI is in control */}
