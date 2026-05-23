@@ -4,6 +4,7 @@ import { ShieldCheck, UserPlus, IdCard, Phone, MapPin } from "lucide-react";
 
 import API from "../api";
 import { LivenessDetector } from "../services/livenessDetector";
+import { useLang } from "../context/LangContext";
 import { captureFrameFromVideo } from "../services/faceCapture";
 
 // ─────────────────────────────────────────────────────────────
@@ -29,6 +30,11 @@ const TOTAL_AI_STEPS = 5; // steps 1–5
 function RegisterPage() {
 
   const navigate = useNavigate();
+  const { t } = useLang();
+  // Speak page intro on load
+  useEffect(() => {
+    setTimeout(() => speak(t.registerTitle + ". " + t.registerSubtitle), 500);
+  }, [t]);
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -70,6 +76,15 @@ function RegisterPage() {
   });
 
   const videoRef    = useRef(null);
+
+  // Auto-speak instruction when step changes
+  useEffect(() => {
+    if (verification.step >= 1 && verification.step <= 5 && !verification.aiLoading) {
+      const { t: trans, speak: spk } = { t, speak };
+      const msg = trans.instructions[verification.step];
+      if (msg) setTimeout(() => spk(msg), 400);
+    }
+  }, [verification.step, verification.aiLoading]);
   const streamRef   = useRef(null);
   const voterIdRef  = useRef(null);
   const detectorRef = useRef(null); // LivenessDetector instance
@@ -270,7 +285,7 @@ function RegisterPage() {
       setVerification((prev) => ({
         ...prev,
         aiLoading: false,
-        aiError: "AI model failed to load. Please refresh and try again.",
+        aiError: "{t.aiLoading}",
       }));
     }
   };
@@ -517,15 +532,15 @@ function RegisterPage() {
         <div className="page-header">
           <div className="eyebrow">
             <ShieldCheck size={16} />
-            Verified registration
+            {t.registerEyebrow}
           </div>
 
           <h1 className="section-title">
-            Voter registration
+            {t.registerTitle}
           </h1>
 
           <p className="section-subtitle">
-            Create your secure voting identity with official CNIC details.
+            {t.registerSubtitle}
           </p>
         </div>
 
@@ -541,12 +556,12 @@ function RegisterPage() {
                   type="text"
                   name="full_name"
                   className="input"
-                  placeholder="As printed on CNIC"
+                  placeholder={t.fullNamePlaceholder}
                   value={formData.full_name}
                   onChange={handleChange}
                 />
               </div>
-              <p className="helper-text">Use your official CNIC spelling.</p>
+              <p className="helper-text">{t.fullNameHelper}</p>
             </div>
 
             <div className="form-group">
@@ -563,7 +578,7 @@ function RegisterPage() {
                   maxLength={15}
                 />
               </div>
-              <p className="helper-text">Format will be applied automatically.</p>
+              <p className="helper-text">{t.cnicHelper}</p>
             </div>
 
             <div className="form-group">
@@ -580,7 +595,7 @@ function RegisterPage() {
                   maxLength={11}
                 />
               </div>
-              <p className="helper-text">Used for secure voter notifications only.</p>
+              <p className="helper-text">{t.phoneHelper}</p>
             </div>
 
             <div className="form-group">
@@ -591,12 +606,12 @@ function RegisterPage() {
                   type="text"
                   name="constituency"
                   className="input"
-                  placeholder="Lahore"
+                  placeholder={t.constituencyPlaceholder}
                   value={formData.constituency}
                   onChange={handleChange}
                 />
               </div>
-              <p className="helper-text">Enter the constituency shown on your CNIC.</p>
+              <p className="helper-text">{t.constituencyHelper}</p>
             </div>
 
           </div>
@@ -609,14 +624,14 @@ function RegisterPage() {
               {loading ? (
                 <>
                   <span className="spinner" />
-                  Registering...
+                  {t.registering}
                 </>
               ) : (
-                "Create voter ID"
+                t.createVoterId
               )}
             </button>
             <span className="form-hint">
-              A unique voter ID will be issued after verification.
+              {t.formHint}
             </span>
           </div>
 
@@ -624,9 +639,9 @@ function RegisterPage() {
 
             <div className="card success-card" ref={voterIdRef}>
 
-              <h2>Registration complete</h2>
+              <h2>{t.regComplete}</h2>
 
-              <p>Save your voter ID for secure access to the ballot.</p>
+              <p>{t.regCompleteSub}</p>
 
               <div className="receipt-box">{voterId}</div>
 
@@ -638,16 +653,16 @@ function RegisterPage() {
                   {copyState.loading ? (
                     <>
                       <span className="spinner" />
-                      Copying...
+                      {t.copying}
                     </>
                   ) : copyState.success ? (
-                    "Copied! Redirecting..."
+                    t.copied
                   ) : (
-                    "Copy voter ID"
+                    t.copyVoterId
                   )}
                 </button>
                 <span className="form-hint">
-                  Copy the ID to proceed to the voting booth.
+                  {t.copyHint}
                 </span>
               </div>
 
@@ -690,22 +705,22 @@ function RegisterPage() {
 
             <div className="modal-content">
               <div className="modal-title">
-                Liveness verification
+                {t.livenessTitle}
               </div>
               <div className="modal-message">
-                Complete the AI-powered verification to receive your voter ID.
+                {t.livenessSubtitle}
               </div>
 
               {/* ── Step checklist (same layout, updated labels) ── */}
               <div className="card" style={{ marginTop: 16 }}>
                 <div style={{ display: "grid", gap: 12 }}>
                   {[
-                    { n: 1, label: "Allow camera access" },
-                    { n: 2, label: "Center your face" },
-                    { n: 3, label: "Blink once" },
-                    { n: 4, label: "Turn head left" },
-                    { n: 5, label: "Turn head right" },
-                    { n: 6, label: "Raise one hand" },
+                    { n: 1, label: t.step1 },
+                    { n: 2, label: t.step2 },
+                    { n: 3, label: t.step3 },
+                    { n: 4, label: t.step4 },
+                    { n: 5, label: t.step5 },
+                    { n: 6, label: t.step6 },
                   ].map(({ n, label }) => {
                     const done = verification.step > n - 1;
                     return (
@@ -791,7 +806,7 @@ function RegisterPage() {
                   {verification.step === 0 && (
                     <div className="helper-text" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                      {verification.faceChecking ? "Scanning your face..." : "Starting camera..."}
+                      {verification.faceChecking ? t.scanning : t.starting}
                     </div>
                   )}
 
@@ -811,19 +826,22 @@ function RegisterPage() {
 
                       {/* Active instruction */}
                       {!verification.aiLoading && !verification.aiError && (
-                        <div
-                          className="helper-text"
-                          style={{
-                            fontWeight: 600,
-                            color: verification.stepDone
-                              ? "var(--success)"
-                              : "var(--text)",
-                            transition: "color 0.3s",
-                          }}
-                        >
-                          {verification.stepDone
-                            ? "✓ Detected! Moving to next step…"
-                            : STEP_INSTRUCTIONS[verification.step]}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div
+                            className="helper-text"
+                            style={{
+                              fontWeight: 600,
+                              flex: 1,
+                              color: verification.stepDone
+                                ? "var(--success)"
+                                : "var(--text)",
+                              transition: "color 0.3s",
+                            }}
+                          >
+                            {verification.stepDone
+                              ? t.detected
+                              : t.instructions[verification.step]}
+                          </div>
                         </div>
                       )}
 

@@ -11,12 +11,18 @@ import {
 import toast from "react-hot-toast";
 
 import API from "../api";
+import { useLang } from "../context/LangContext";
 
 
 function VotePage() {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useLang();
+  // Speak page intro on load
+  useEffect(() => {
+    setTimeout(() => speak(t.voteTitle + ". " + t.voteSubtitle), 500);
+  }, [t]);
 
   const [voterId, setVoterId] = useState("");
 
@@ -287,7 +293,7 @@ function VotePage() {
         <div className="page-header">
           <div className="eyebrow">
             <VoteIcon size={16} />
-            Secure ballot
+            {t.voteTitle}
           </div>
           <h1 className="section-title">
             Cast your vote

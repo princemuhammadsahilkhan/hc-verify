@@ -4,9 +4,15 @@ import { BadgeCheck, ShieldCheck, Hash, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import API from "../api";
+import { useLang } from "../context/LangContext";
 
 
 function VerifyPage() {
+  const { t } = useLang();
+  // Speak page intro on load
+  useEffect(() => {
+    setTimeout(() => speak(t.verifyTitle + ". " + t.verifySubtitle), 500);
+  }, [t]);
 
   const location = useLocation();
 
@@ -58,14 +64,13 @@ function VerifyPage() {
       <div className="page-header">
         <div className="eyebrow">
           <BadgeCheck size={16} />
-          Public verification
+          {t.verifyEyebrow}
         </div>
         <h1 className="section-title">
-          Verify a vote receipt
+          {t.verifyTitle}
         </h1>
         <p className="section-subtitle">
-          Confirm your receipt exists on the public ledger without revealing
-          your selected candidate.
+          {t.verifySubtitle}
         </p>
       </div>
 
@@ -75,7 +80,7 @@ function VerifyPage() {
         <div className="form-group">
 
           <label className="form-label">
-            Receipt code
+            {t.receiptCode}
           </label>
 
           <div className="input-wrap">
@@ -92,7 +97,7 @@ function VerifyPage() {
           </div>
 
           <p className="helper-text">
-            Enter the receipt issued immediately after voting.
+            {t.receiptCodeHelper}
           </p>
 
         </div>
@@ -110,7 +115,7 @@ function VerifyPage() {
                   Verifying...
                 </>
               )
-              : "Verify receipt"
+              : t.verifyBtn
           }
         </button>
 
@@ -129,11 +134,11 @@ function VerifyPage() {
 
                     <div className="result-header">
                       <ShieldCheck size={18} />
-                      <h2>Receipt verified</h2>
+                      <h2>{t.receiptVerified}</h2>
                     </div>
 
                     <p>
-                      Your receipt is confirmed on the public ledger.
+                      {t.receiptConfirmed}
                     </p>
 
                     <div className="receipt-box">
@@ -143,7 +148,7 @@ function VerifyPage() {
                     <div className="result-meta">
                       <span>
                         <Hash size={14} />
-                        Blockchain hash
+                        {t.blockchainHash}
                       </span>
                       <div className="hash-value">
                         {result.blockchain_hash}
@@ -158,7 +163,7 @@ function VerifyPage() {
 
                     <div className="result-header error">
                       <ShieldCheck size={18} />
-                      <h2>Receipt not found</h2>
+                      <h2>{t.receiptNotFound}</h2>
                     </div>
 
                     <p>
