@@ -1,7 +1,7 @@
 # HV Verify
 
 ## Project Description
-HV Verify is a demo e-voting system with a React/Vite frontend and a FastAPI backend. It supports voter registration, voter ID authentication, ballot casting, receipt verification, and live results reporting. The backend uses a local SQLite database and generates a simulated blockchain hash for vote receipts.
+HV Verify is a demo e-voting system with a React/Vite frontend and a FastAPI backend. It supports voter registration, voter ID authentication, ballot casting, receipt verification, and live results.
 
 ## Features
 - Voter registration with CNIC-based identity checks
@@ -13,8 +13,6 @@ HV Verify is a demo e-voting system with a React/Vite frontend and a FastAPI bac
 - Admin dashboard (static UI)
 - Simulated liveness-style verification UI using webcam permissions
 - Simulated blockchain hash on vote receipts
-
- 
 
 ## Project Structure
 ```
@@ -110,3 +108,56 @@ Base URL: `http://<host>:8000`
 ## License
 No license specified.
 # hc-verify
+
+---
+
+# Updated Work / Major Recent Changes
+
+### Latest Updates
+
+- **Backend Interface in Admin Panel**  
+  Implemented a backend interface within the admin panel for improved management and control.  
+  _([See commit 54f2ff7](https://github.com/princemuhammadsahilkhan/hc-verify/commit/54f2ff7c59e61ce1fe97e302547cd70a8fd5ff7e))_
+
+- **Comprehensive Language Translation**  
+  Integrated language translation for all pages, improving accessibility for multilingual users.  
+  _([See commit b6ebad69](https://github.com/princemuhammadsahilkhan/hc-verify/commit/b6ebad69d0dbc1ba51c2fcac2f36ab4127b57ada))_
+
+- **Security and Recovery**  
+  Added advanced security features, facial recognition for liveness detection, admin recovery features, and a language switcher.  
+  _([See commit 7e69fb42](https://github.com/princemuhammadsahilkhan/hc-verify/commit/7e69fb4281eab4d9563f66e366cf20ae50260044))_
+
+- **AI Liveness Detection**  
+  Introduced AI-powered liveness checks as part of the authentication process, enhancing defense against spoofing.  
+  _([See commit d6156d15](https://github.com/princemuhammadsahilkhan/hc-verify/commit/d6156d15ad1de7300583cf102d51a7346294f0b9))_
+
+- **Initial Version**  
+  Basic structure and features of the e-voting system scaffolded.  
+  _([Initial commit](https://github.com/princemuhammadsahilkhan/hc-verify/commit/9cccdfa35f19183b624dd0143e91c30d092274ea))_
+
+### Complete Feature Summary
+- Voter registration with CNIC-based checks.
+- Secure voter authentication and recovery.
+- One-vote-per-person enforcement.
+- Ballot casting with cryptographic receipt.
+- Simulated blockchain hash generation for vote receipts.
+- Admin dashboard and backend management.
+- Live metrics and results tracking.
+- AI-based liveness and face recognition.
+- Multilingual and language-switcher support.
+- Static and simulated liveness UI (webcam).
+- Security hardening: replay protection, uniqueness, and privacy.
+- API endpoints for every voting and admin operation.
+
+### Language Composition
+| Language    | Percentage |
+|-------------|------------|
+| Python      | 97.1%      |
+| C           | 0.9%       |
+| Cython      | 0.8%       |
+| C++         | 0.7%       |
+| JavaScript  | 0.3%       |
+| Fortran     | 0.1%       |
+| Other       | 0.1%       |
+
+For further project history and minor updates, see the [commit history](https://github.com/princemuhammadsahilkhan/hc-verify/commits/main).
