@@ -9,6 +9,7 @@ import { useLang } from "../context/LangContext";
 
 function VerifyPage() {
   const { t } = useLang();
+  const speak = () => {};
   // Speak page intro on load
   useEffect(() => {
     setTimeout(() => speak(t.verifyTitle + ". " + t.verifySubtitle), 500);
@@ -22,12 +23,27 @@ function VerifyPage() {
 
   const [loading, setLoading] = useState(false);
 
+  const [autoVerify, setAutoVerify] = useState(false);
+
   useEffect(() => {
-    const incomingReceipt = location.state?.receiptCode;
+    const params = new URLSearchParams(location.search);
+    const codeFromUrl = params.get("code");
+    const incomingReceipt = location.state?.receiptCode || codeFromUrl;
+
     if (incomingReceipt && !receipt) {
       setReceipt(incomingReceipt);
+      if (codeFromUrl) {
+        setAutoVerify(true);
+      }
     }
-  }, [location.state, receipt]);
+  }, [location.search, location.state, receipt]);
+
+  useEffect(() => {
+    if (autoVerify && receipt) {
+      verifyVote();
+      setAutoVerify(false);
+    }
+  }, [autoVerify, receipt]);
 
 
   const verifyVote = async () => {

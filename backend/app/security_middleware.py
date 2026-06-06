@@ -11,6 +11,7 @@ Implements:
 import time
 import re
 from collections import defaultdict
+from datetime import datetime
 from fastapi import HTTPException, Request, status
 
 # ─────────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ from app.models import AuditLog
 
 async def audit(db, action: str, details: str, severity: str = "info"):
     try:
-        log = AuditLog(action=action, details=details, severity=severity)
+        log = AuditLog(action=action, details=details, severity=severity, timestamp=datetime.utcnow())
         db.add(log)
         await db.commit()
     except Exception as e:

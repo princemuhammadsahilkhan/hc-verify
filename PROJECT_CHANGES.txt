@@ -1,0 +1,67 @@
+PROJECT CHANGES & FLOW
+Date: 2026-06-02
+
+1) Purpose
+- This file documents all changes made during the recent work on the hc-verify project and describes the final user flow implemented.
+
+2) High-level user flow
+Landing Page -> Auth (Login/Register) -> Profile (Edit & Save) -> Register (Face verification) -> Vote (voter_id auto-filled) -> Verify/Receipt
+
+Details:
+- Users must authenticate (Account) before starting registration.
+- After login, users land on a `Profile` page to edit/save details; saving redirects to the `Register` flow.
+- `Register` performs face liveness/verification; on success the backend generates a `voter_id` and the frontend redirects the user to the `Vote` page, passing the `voter_id` in navigation state.
+- `Vote` accepts either JWT-authenticated requests or direct voter_id submissions (for verified-but-not-tokenized flows); it auto-fills voter identity and allows casting a ballot.
+
+3) Summary of functional changes (what we did)
+- Enforced auth-first flow: users visit `Auth` before `Register`.
+- Removed "Account" label/icon from the Navbar to reduce pre-login UI noise.
+- Removed CNIC from the auth signup form and stopped exposing a `voter_id` at auth-stage.
+- Created a `Profile` page (frontend) and added `PUT /auth/me` (backend) so users can edit profile and then continue to registration.
+- After profile save, the app redirects to the `Register` page.
+- Registration (face verification) now returns/produces `voter_id`; the frontend redirects to `Vote` with that `voter_id` in state.
+- `Vote` page updated to accept `voter_id` via navigation state and to send votes either using JWT (Authorization header) or including `voter_id` in the request body when no JWT is present.
+- Fixed SPA crash during liveness/model load by removing/guarding undefined global `speak()` calls.
+- Ensured frontend builds successfully after each change (Vite builds confirmed).
+
+4) Files changed (high-level list)
+- backend/main.py: added/adjusted endpoints (`PUT /auth/me`), modified `/auth/register` behavior.
+- backend/app/schemas.py: updated schemas for auth/register and profile update.
+- frontend/src/pages/AuthPage.jsx: removed CNIC, adjusted post-login navigation to `/profile`.
+- frontend/src/pages/ProfilePage.jsx: new page to load `/auth/me`, edit profile, save -> redirect to `/register`.
+- frontend/src/pages/RegisterPage.jsx: require auth before starting liveness; after successful verification/register redirect to `/vote` with `voter_id`.
+- frontend/src/pages/VotePage.jsx: accept `voter_id` in navigation state; if no JWT present, send `voter_id` in vote payload; avoid sending null Authorization header.
+- frontend/src/components/Navbar.jsx: removed "Account" text/icon from visible navbar.
+- frontend/src/services/livenessDetector.js: (no major changes to implementation) but pages using it were fixed to avoid undefined helpers.
+
+5) Key debugging notes
+- Root cause of blank-screen during liveness/model load: runtime error from undefined `speak()` global helper referenced in multiple pages. Fix: remove or guard `speak()` calls (safe no-op) across pages.
+- Some apply_patch attempts failed due to file index shifts; subsequent focused patches succeeded.
+
+6) Commands run (representative)
+- Frontend builds (run in `frontend`):
+  - `cd frontend`
+  - `npm run build` (Vite build performed successfully multiple times during edits)
+- Backend dev serve (example):
+  - `uvicorn main:app --reload` (backend runs during development)
+
+7) Remaining recommendations (security & roadmap gaps)
+- Move any hard-coded JWT secret to environment variables (`.env`).
+- Consider switching password hashing to `bcrypt` (passlib) instead of `pbkdf2_sha256` for stronger defaults.
+- Add deterministic vote hashing and an immutable ledger/audit (SHA256) to ensure vote immutability.
+- Add admin endpoints for `district-results` and real-time updates (WebSocket) as future roadmap items.
+- Add tests and CI, and consider Docker packaging for reproducible deployment.
+
+8) Quick file pointer (edit highlights)
+- `backend/main.py` - profile endpoints and auth register behavior adjusted.
+- `frontend/src/pages/ProfilePage.jsx` - new profile editor and redirect-to-register flow.
+- `frontend/src/pages/RegisterPage.jsx` - liveness flow gate (requires auth), redirect-to-vote on success.
+- `frontend/src/pages/VotePage.jsx` - consumes `voter_id` from navigation state and supports non-JWT voting.
+
+9) Contact / Next steps
+- If you want, I can:
+  - Commit these changes and create a git-friendly changelog.
+  - Harden backend secrets and switch hashing to `bcrypt`.
+  - Add a simple integration test that exercises the full flow (auth -> profile -> register -> vote).
+
+End of PROJECT_CHANGES.txt

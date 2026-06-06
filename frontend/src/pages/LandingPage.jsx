@@ -259,7 +259,7 @@ export default function LandingPage() {
           flexWrap: "wrap", marginBottom: 48,
           animation: "fadeUp 0.6s 0.3s ease both",
         }}>
-          <Link to="/register" style={{
+          <Link to="/auth" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             background: "linear-gradient(135deg, #0f766e, #0ea5a5)",
             color: "#fff", padding: "14px 28px", borderRadius: 14,
@@ -433,7 +433,7 @@ export default function LandingPage() {
         <p style={{ color: "#556178", marginBottom: 28, fontSize: 15 }}>
           Register in under 2 minutes. Your identity is protected by AI.
         </p>
-        <Link to="/register" style={{
+        <Link to="/auth" style={{
           display: "inline-flex", alignItems: "center", gap: 8,
           background: "linear-gradient(135deg, #0f766e, #0ea5a5)",
           color: "#fff", padding: "16px 36px", borderRadius: 16,

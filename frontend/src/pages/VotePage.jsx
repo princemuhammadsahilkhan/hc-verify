@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   BadgeCheck,
   ShieldCheck,
-  KeyRound,
   Vote as VoteIcon,
   ArrowRight,
   CheckCircle2
@@ -12,19 +11,20 @@ import toast from "react-hot-toast";
 
 import API from "../api";
 import { useLang } from "../context/LangContext";
-
+import { QRCodeSVG } from "qrcode.react";
 
 function VotePage() {
 
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useLang();
+  const speak = () => {};
   // Speak page intro on load
   useEffect(() => {
     setTimeout(() => speak(t.voteTitle + ". " + t.voteSubtitle), 500);
   }, [t]);
 
-  const [voterId, setVoterId] = useState("");
+  const [voter, setVoter] = useState(null);
 
   const [authenticated, setAuthenticated] = useState(false);
 
@@ -40,40 +40,50 @@ function VotePage() {
     success: false
   });
 
+  const [directVoterId, setDirectVoterId] = useState(
+    location.state?.voterId || ""
+  );
+
   useEffect(() => {
-    const incomingVoterId = location.state?.voterId;
-    if (incomingVoterId && !voterId) {
-      setVoterId(incomingVoterId);
+    if (location.state?.voterId) {
+      setDirectVoterId(location.state.voterId);
+      setAuthenticated(true);
+      loadCandidates();
+      return;
     }
-  }, [location.state, voterId]);
+
+    const token = localStorage.getItem("voterToken");
+    if (!token) {
+      return;
+    }
+
+    const loadSession = async () => {
+      try {
+        const response = await API.get("/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        setVoter(response.data);
+        setAuthenticated(true);
+        setDirectVoterId(response.data.voter_id || "");
+        await loadCandidates();
+      } catch (error) {
+        localStorage.removeItem("voterToken");
+        setAuthenticated(false);
+        setVoter(null);
+      }
+    };
+
+    loadSession();
+  }, []);
 
 
   // =====================================
   // AUTHENTICATE
   // =====================================
 
-  const authenticate = async () => {
-
-    try {
-
-      const response = await API.get(`/authenticate/${voterId}`);
-
-      if (response.data.success) {
-
-        setAuthenticated(true);
-        loadCandidates();
-
-      } else {
-
-        toast.error(response.data.message || "Authentication failed");
-      }
-
-    } catch (error) {
-
-      console.log(error);
-
-      toast.error("Authentication failed. Please try again.");
-    }
+  const authenticate = () => {
+    navigate("/auth");
   };
 
 
@@ -103,16 +113,30 @@ function VotePage() {
 
       setLoading(true);
 
+      const token = localStorage.getItem("voterToken");
+      if (!token && !directVoterId) {
+        toast.error("Please log in to vote.");
+        navigate("/auth");
+        return;
+      }
+
+      const votePayload = {
+        candidate_id: candidateId
+      };
+
+      if (!token && directVoterId) {
+        votePayload.voter_id = directVoterId;
+      }
       const response = await API.post(
 
         "/vote",
 
-        {
-
-          voter_id: voterId,
-
-          candidate_id: candidateId
-        }
+        votePayload,
+        token
+          ? {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          : undefined
       );
 
       setReceipt(response.data);
@@ -232,6 +256,18 @@ function VotePage() {
               {receipt.receipt_code}
             </div>
 
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '24px' }}>
+              <div style={{ background: 'white', padding: '12px', borderRadius: '8px' }}>
+                <QRCodeSVG
+                  value={`${window.location.origin}/verify-public?code=${receipt.receipt_code}`}
+                  size={140}
+                  bgColor={"#ffffff"}
+                  fgColor={"#000000"}
+                  level={"Q"}
+                  includeMargin={false}
+                />
+              </div>
+            </div>
             <div className="form-actions" style={{ marginTop: 16 }}>
               <button
                 className={`button${copyState.loading ? " is-loading" : ""}`}
@@ -385,45 +421,33 @@ function VotePage() {
           Voter authentication
         </h1>
         <p className="section-subtitle">
-          Enter your voter ID to access the secure ballot interface.
+          Sign in with your voter account to access the secure ballot interface.
         </p>
       </div>
 
 
       <div className="card form-card">
+        <p className="helper-text" style={{ marginBottom: 16 }}>
+          You need an active voter session to continue.
+        </p>
 
-        <div className="form-group">
-
-          <label className="form-label">
-            Voter ID
-          </label>
-
-          <div className="input-wrap">
-            <KeyRound size={16} />
-            <input
-              type="text"
-              className="input"
-              placeholder="HC-XXXXXX"
-              value={voterId}
-              onChange={(e) =>
-                setVoterId(e.target.value)
-              }
-            />
-          </div>
-          <p className="helper-text">
-            Use the ID issued during registration.
-          </p>
-
+        <div className="form-actions">
+          <button
+            className="button"
+            onClick={authenticate}
+          >
+            Go to login
+            <BadgeCheck size={16} />
+          </button>
         </div>
 
-
-        <button
-          className="button"
-          onClick={authenticate}
-        >
-          Enter voting booth
-          <BadgeCheck size={16} />
-        </button>
+        {voter && (
+          <div className="admin-list" style={{ marginTop: 18 }}>
+            <div className="admin-row"><span>Name</span><strong>{voter.full_name}</strong></div>
+            <div className="admin-row"><span>Email</span><strong>{voter.email}</strong></div>
+            <div className="admin-row"><span>District</span><strong>{voter.district || "-"}</strong></div>
+          </div>
+        )}
 
       </div>
 

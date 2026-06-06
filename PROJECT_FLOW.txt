@@ -1,0 +1,90 @@
+PROJECT FLOW — hc-verify
+Date: 2026-06-02
+
+Overview
+This document describes the end-to-end user and system flow implemented in the project so far, from landing to receipt.
+
+User-facing flow (high level)
+1. Landing -> Home
+   - User visits the app (frontend). They can view information and click to `Auth`.
+
+2. Auth (Login / Register)
+   - Frontend page: `frontend/src/pages/AuthPage.jsx`
+   - Behavior: user logs in or begins signup. CNIC removed from signup.
+   - On successful login, frontend navigates to `Profile`.
+   - Backend endpoints involved: `POST /auth/login`, `POST /auth/register` (reduced response; does not return voter_id).
+
+3. Profile (Edit & Save)
+   - Frontend page: `frontend/src/pages/ProfilePage.jsx` (new)
+   - User edits `full_name`, `email`, `district`, optionally password.
+   - Save action: calls `PUT /auth/me` on backend.
+   - On success, frontend redirects to `Register`.
+
+4. Register (Face verification / Liveness)
+   - Frontend page: `frontend/src/pages/RegisterPage.jsx`
+   - Liveness detection uses client-side MediaPipe implementation (`frontend/src/services/livenessDetector.js`).
+   - Register requires the user to be authenticated (token present).
+   - Flow: start liveness -> capture face image/embedding -> POST to `POST /register` (or `/verify-face` depending on implementation) -> backend performs embedding check and stores embedding plus generates `voter_id` when verification succeeds.
+   - After successful registration/verification, frontend redirects to `Vote` and passes `voter_id` in navigation state.
+
+5. Vote (Ballot)
+   - Frontend page: `frontend/src/pages/VotePage.jsx`
+   - Behavior: accepts `voter_id` passed in navigation state or uses JWT Authorization header if present.
+   - Casting a vote: frontend sends either Authorization header (JWT) or includes `voter_id` in request body to `POST /vote`.
+   - Backend records vote (Vote table) and returns receipt or status.
+
+6. Verify / Receipt
+   - Frontend shows confirmation/receipt page (e.g., `VerifyPage.jsx` exists for receipt checks).
+   - Backend may support `GET /verify/{receipt_code}` to check vote proof.
+
+Key backend actions and endpoints (representative)
+- `POST /auth/register` — creates a user account (no voter_id returned here).
+- `POST /auth/login` — returns JWT used for authenticated flows.
+- `GET /auth/me` — returns current user profile.
+- `PUT /auth/me` — update profile (used by `Profile` page).
+- `POST /register` or `/verify-face` — face verification and voter registration; backend generates `voter_id` on success.
+- `POST /vote` — cast vote using JWT or `voter_id` in body.
+- `GET /verify/{receipt_code}` — optional receipt verification endpoint.
+
+Data & state notes
+- `voter_id` generation: occurs after successful face verification/registration.
+- JWT: used for authenticated flows; when present, used for requests; when absent, `voter_id` can be supplied for post-verification actions.
+- Face embeddings: stored in `voters.face_embedding` in DB once verification completes.
+
+Frontend components & files (where to look)
+- `frontend/src/pages/AuthPage.jsx` — login/register UI changes (CNIC removed).
+- `frontend/src/pages/ProfilePage.jsx` — profile editor and redirect-to-register.
+- `frontend/src/pages/RegisterPage.jsx` — liveness UI, register flow, redirect-to-vote with `voter_id`.
+- `frontend/src/pages/VotePage.jsx` — consumes `voter_id` and casts the vote.
+- `frontend/src/components/Navbar.jsx` — "Account" label/icon removed.
+- `frontend/src/services/livenessDetector.js` — MediaPipe liveness detector used by register page.
+
+Backend files (where to look)
+- `backend/main.py` — API endpoints and routing (auth, register, vote, profile endpoints).
+- `backend/app/schemas.py` — request/response schemas updated for profile and auth changes.
+- `backend/app/models.py` — Voter, Candidate, Vote, AuditLog models.
+
+Recent fixes and safety notes
+- Fixed runtime SPA crash by removing/guarding undefined `speak()` calls that occurred during model load.
+- Frontend build verified via Vite builds after each change.
+- Security recommendations remain: move JWT secrets to environment, switch to bcrypt, add vote hashing/audit ledger, add tests and CI.
+
+End-to-end sequence diagram (text)
+1. User -> Frontend: open app -> click "Auth"
+2. Frontend -> Backend: `POST /auth/login` (or register)
+3. Backend -> Frontend: JWT (on login)
+4. Frontend -> Backend: `GET /auth/me` (Profile load)
+5. User edits -> Frontend -> Backend: `PUT /auth/me` -> Backend saves
+6. Frontend: redirect to `Register`
+7. Frontend (MediaPipe) -> capture face -> Frontend -> Backend: `POST /register` (face image/embedding)
+8. Backend -> DB: save embedding, create `voter_id` -> Backend -> Frontend: success + `voter_id`
+9. Frontend: redirect to `Vote` (pass `voter_id` in navigation state)
+10. User selects candidate -> Frontend -> Backend: `POST /vote` (Authorization header if JWT, else body contains `voter_id`)
+11. Backend -> DB: record vote; return receipt
+12. Frontend: show confirmation/receipt
+
+If you'd like, I can now:
+- Commit these new files and changes.
+- Generate a simple sequence diagram image (Mermaid) and save it in the repo.
+
+End of PROJECT_FLOW.txt

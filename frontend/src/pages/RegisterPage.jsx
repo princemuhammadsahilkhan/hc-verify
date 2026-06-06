@@ -31,6 +31,13 @@ function RegisterPage() {
 
   const navigate = useNavigate();
   const { t } = useLang();
+  const speak = () => {};
+  useEffect(() => {
+    const token = localStorage.getItem("voterToken");
+    if (!token) {
+      navigate("/auth", { replace: true });
+    }
+  }, [navigate]);
   // Speak page intro on load
   useEffect(() => {
     setTimeout(() => speak(t.registerTitle + ". " + t.registerSubtitle), 500);
@@ -95,6 +102,21 @@ function RegisterPage() {
   // =====================================
 
   const openVerification = () => {
+    // Feature flag: Bypass liveness detection if not explicitly enabled
+    const livenessEnabled = import.meta.env.VITE_ENABLE_LIVENESS === "true";
+    if (!livenessEnabled) {
+      console.log("[Liveness Bypass] Feature flag VITE_ENABLE_LIVENESS is disabled. Registering voter directly.");
+      register(null).then((registeredVoterId) => {
+        if (registeredVoterId) {
+          navigate("/vote", {
+            state: {
+              voterId: registeredVoterId,
+            },
+          });
+        }
+      });
+      return;
+    }
     setVerification({
       open: true,
       step: 0,
@@ -307,14 +329,13 @@ function RegisterPage() {
     // Capture face frame before closing camera
     const faceImage = captureFrameFromVideo(videoRef.current);
     closeVerification();
-    const registered = await register(faceImage);
-    if (registered) {
-      setTimeout(() => {
-        voterIdRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-      }, 150);
+    const registeredVoterId = await register(faceImage);
+    if (registeredVoterId) {
+      navigate("/vote", {
+        state: {
+          voterId: registeredVoterId,
+        },
+      });
     }
   };
 
@@ -463,7 +484,7 @@ function RegisterPage() {
         }
       }
 
-      return true;
+      return response.data.voter_id;
 
     } catch (error) {
 
@@ -502,7 +523,7 @@ function RegisterPage() {
       setCopyState({ loading: false, error: "", success: true });
 
       setTimeout(() => {
-        navigate("/vote", { state: { voterId } });
+        navigate("/auth", { state: { mode: "login" } });
       }, 500);
 
     } catch (error) {

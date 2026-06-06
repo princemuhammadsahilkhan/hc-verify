@@ -5,7 +5,13 @@ import Navbar from "./components/Navbar";
 
 import HomePage from "./pages/HomePage";
 import LandingPage from "./pages/LandingPage";
+import PublicBoardPage from "./pages/PublicBoardPage";
+import RegistrationsLedgerPage from "./pages/RegistrationsLedgerPage";
+import VotesLedgerPage from "./pages/VotesLedgerPage";
+import AuditLedgerPage from "./pages/AuditLedgerPage";
 import RegisterPage from "./pages/RegisterPage";
+import AuthPage from "./pages/AuthPage";
+import ProfilePage from "./pages/ProfilePage";
 import VotePage from "./pages/VotePage";
 import VerifyPage from "./pages/VerifyPage";
 import ResultsPage from "./pages/ResultsPage";
@@ -36,9 +42,17 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/home" element={<HomePage />} />
+        <Route path="/board" element={<PublicBoardPage />} />
+        <Route path="/ledger/registrations" element={<RegistrationsLedgerPage />} />
+        <Route path="/ledger/votes" element={<VotesLedgerPage />} />
+        <Route path="/ledger/audit" element={<AuditLedgerPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/auth" element={<AuthPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/dashboard" element={<ProfilePage />} />
         <Route path="/vote" element={<VotePage />} />
         <Route path="/verify" element={<VerifyPage />} />
+        <Route path="/verify-public" element={<VerifyPage />} />
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route
           path="/results"

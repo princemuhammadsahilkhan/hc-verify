@@ -17,3 +17,8 @@ starlette==1.0.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.46.0
+fpdf2==2.8.1
+passlib==1.7.4
+python-jose==3.3.0
+mediapipe==0.10.11
+opencv-python-headless==4.9.0.80

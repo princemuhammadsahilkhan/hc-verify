@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ShieldCheck, Home, UserPlus, Vote, BadgeCheck, BarChart3, Settings } from "lucide-react";
+import { ShieldCheck, Home, UserPlus, Vote, BadgeCheck, BarChart3, Settings, LogIn } from "lucide-react";
 import { useLang, LANGUAGES } from "../context/LangContext";
 
 function Navbar() {
@@ -17,7 +17,7 @@ function Navbar() {
 
         <div className="nav-links">
           <Link className="nav-link" to="/"><Home size={16} />{t.home}</Link>
-          <Link className="nav-link" to="/register"><UserPlus size={16} />{t.register}</Link>
+          <Link className="nav-link" to="/auth"><UserPlus size={16} />{t.register}</Link>
           <Link className="nav-link" to="/vote"><Vote size={16} />{t.vote}</Link>
           <Link className="nav-link" to="/verify"><BadgeCheck size={16} />{t.verify}</Link>
           {isAdmin ? (

@@ -1,6 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, Response
+import csv
+import io
+import hashlib
+try:
+    from fpdf import FPDF
+except ImportError:
+    FPDF = None
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,12 +18,24 @@ from app.database import Base, engine, get_db
 from app.models import (
     Voter,
     Candidate,
-    Vote
+    Vote,
+    AuditLog
 )
 
 from app.schemas import (
     RegisterSchema,
+    AuthRegisterSchema,
+    AuthUpdateSchema,
+    LoginSchema,
+    CandidateCreateSchema,
     VoteSchema
+)
+
+from app.utils.security import hash_password, verify_password
+from app.utils.jwt_handler import (
+    create_access_token,
+    SECRET_KEY as VOTER_JWT_SECRET,
+    ALGORITHM as VOTER_JWT_ALGORITHM,
 )
 
 import random
@@ -74,6 +94,39 @@ class RecoveryKeySchema(BaseModel):
 class EmailResetSchema(BaseModel):
     reset_token: str
     new_password: str
+
+
+def calculate_registration_hash(voter_id: str, cnic: str, full_name: str) -> str:
+    return hashlib.sha256(f"{voter_id}{cnic}{full_name}".encode()).hexdigest()
+
+
+def calculate_vote_hash(voter_id: int, candidate_id: int, receipt_code: str) -> str:
+    return hashlib.sha256(f"{voter_id}{candidate_id}{receipt_code}".encode()).hexdigest()
+
+
+def ensure_phase_one_schema(conn):
+
+    if conn.dialect.name != "sqlite":
+        return
+
+    statements = [
+        'ALTER TABLE voters ADD COLUMN email VARCHAR',
+        'ALTER TABLE voters ADD COLUMN password VARCHAR',
+        'ALTER TABLE voters ADD COLUMN district VARCHAR',
+        'ALTER TABLE voters ADD COLUMN registration_hash VARCHAR',
+        'ALTER TABLE candidates ADD COLUMN district VARCHAR',
+        'ALTER TABLE votes ADD COLUMN vote_hash VARCHAR',
+        'ALTER TABLE votes ADD COLUMN timestamp DATETIME',
+        'ALTER TABLE audit_logs ADD COLUMN timestamp DATETIME',
+    ]
+
+    for statement in statements:
+        try:
+            conn.exec_driver_sql(statement)
+        except Exception as exc:
+            message = str(exc).lower()
+            if "duplicate column name" not in message and "already exists" not in message:
+                raise
 
 
 def create_admin_token():
@@ -138,6 +191,40 @@ def require_admin(
     return payload
 
 
+def get_current_voter(credentials: HTTPAuthorizationCredentials = Depends(security)):
+
+    if not credentials:
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+
+    try:
+
+        payload = jwt.decode(
+            credentials.credentials,
+            VOTER_JWT_SECRET,
+            algorithms=[VOTER_JWT_ALGORITHM]
+        )
+
+    except JWTError:
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+
+    if payload.get("role") != "voter":
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized"
+        )
+
+    return payload
+
+
 # =====================================
 # CORS
 # =====================================
@@ -157,15 +244,42 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
-
+    global engine
     ensure_recovery_key_exists()
 
-
-    async with engine.begin() as conn:
-
-        await conn.run_sync(
-            Base.metadata.create_all
-        )
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(
+                Base.metadata.create_all
+            )
+            await conn.run_sync(ensure_phase_one_schema)
+    except Exception as e:
+        if "postgresql" in str(engine.url):
+            print("\n" + "="*70)
+            print("WARNING: Failed to connect to PostgreSQL database.")
+            print(f"Error details: {e}")
+            print("Falling back to SQLite database for safety and local development.")
+            print("="*70 + "\n")
+            
+            from app import database
+            from sqlalchemy.ext.asyncio import create_async_engine
+            from sqlalchemy.orm import sessionmaker
+            from sqlalchemy.ext.asyncio import AsyncSession
+            
+            database.DATABASE_URL = "sqlite+aiosqlite:///./hc_verify.db"
+            database.engine = create_async_engine(database.DATABASE_URL, echo=True)
+            engine = database.engine
+            database.AsyncSessionLocal = sessionmaker(
+                bind=database.engine,
+                class_=AsyncSession,
+                expire_on_commit=False
+            )
+            
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                await conn.run_sync(ensure_phase_one_schema)
+        else:
+            raise e
 
     async for db in get_db():
 
@@ -258,6 +372,242 @@ async def admin_login(credentials: AdminLoginSchema, request: Request):
     return {
         "access_token": token,
         "token_type": "bearer"
+    }
+
+
+# =====================================
+# AUTH REGISTER
+# =====================================
+
+@app.post("/auth/register")
+async def auth_register(
+
+    voter: AuthRegisterSchema,
+
+    db: AsyncSession = Depends(get_db)
+
+):
+
+    existing_email = await db.execute(
+        select(Voter).where(Voter.email == voter.email)
+    )
+
+    if existing_email.scalars().first():
+
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    voter_id = "HC-" + ''.join(
+
+        random.choices(
+
+            string.ascii_uppercase + string.digits,
+
+            k=6
+
+        )
+
+    )
+
+    new_voter = Voter(
+
+        voter_id=voter_id,
+
+        full_name=voter.full_name,
+
+        email=voter.email,
+
+        password=hash_password(voter.password),
+
+        cnic="AUTH-" + ''.join(
+
+            random.choices(
+
+                string.ascii_uppercase + string.digits,
+
+                k=10
+
+            )
+
+        ),
+
+        district=voter.district,
+
+        phone=voter.phone or "",
+
+        constituency=voter.constituency or voter.district,
+
+    )
+
+    new_voter.registration_hash = calculate_registration_hash(
+        new_voter.voter_id,
+        new_voter.cnic,
+        new_voter.full_name
+    )
+
+    db.add(new_voter)
+
+    await db.commit()
+
+    return {
+
+        "success": True,
+
+        "message": "User registered successfully",
+
+    }
+
+
+# =====================================
+# AUTH LOGIN
+# =====================================
+
+@app.post("/auth/login")
+async def auth_login(
+
+    user: LoginSchema,
+
+    db: AsyncSession = Depends(get_db)
+
+):
+
+    result = await db.execute(
+        select(Voter).where(Voter.email == user.email)
+    )
+
+    voter = result.scalars().first()
+
+    if not voter or not voter.password:
+
+        raise HTTPException(status_code=400, detail="Invalid email")
+
+    if not verify_password(user.password, voter.password):
+
+        raise HTTPException(status_code=400, detail="Invalid password")
+
+    token = create_access_token(
+        data={
+            "sub": voter.email,
+            "role": "voter",
+            "voter_id": voter.voter_id,
+        }
+    )
+
+    return {
+
+        "access_token": token,
+
+        "token_type": "bearer"
+
+    }
+
+
+# =====================================
+# AUTH ME
+# =====================================
+
+@app.get("/auth/me")
+async def auth_me(
+
+    token_data: dict = Depends(get_current_voter),
+
+    db: AsyncSession = Depends(get_db)
+
+):
+
+    voter_id = token_data.get("voter_id")
+
+    result = await db.execute(
+        select(Voter).where(Voter.voter_id == voter_id)
+    )
+
+    voter = result.scalars().first()
+
+    if not voter:
+
+        raise HTTPException(status_code=404, detail="Voter not found")
+
+    return {
+
+        "id": voter.id,
+
+        "voter_id": voter.voter_id,
+
+        "full_name": voter.full_name,
+
+        "email": voter.email,
+
+        "cnic": voter.cnic,
+
+        "district": voter.district,
+
+        "is_verified": voter.is_verified,
+
+        "has_voted": voter.has_voted,
+
+        "created_at": voter.created_at,
+
+    }
+
+
+# =====================================
+# UPDATE AUTH PROFILE
+# =====================================
+
+@app.put("/auth/me")
+async def update_auth_me(
+
+    payload: AuthUpdateSchema,
+
+    token_data: dict = Depends(get_current_voter),
+
+    db: AsyncSession = Depends(get_db)
+
+):
+
+    voter_id = token_data.get("voter_id")
+
+    result = await db.execute(
+        select(Voter).where(Voter.voter_id == voter_id)
+    )
+
+    voter = result.scalars().first()
+
+    if not voter:
+        raise HTTPException(status_code=404, detail="Voter not found")
+
+    if payload.email and payload.email != voter.email:
+        existing_email = await db.execute(
+            select(Voter).where(Voter.email == payload.email)
+        )
+        if existing_email.scalars().first():
+            raise HTTPException(status_code=400, detail="Email already exists")
+        voter.email = payload.email
+
+    if payload.full_name:
+        voter.full_name = payload.full_name
+
+    if payload.district:
+        voter.district = payload.district
+
+    if payload.password:
+        voter.password = hash_password(payload.password)
+
+    await db.commit()
+    await db.refresh(voter)
+
+    return {
+        "success": True,
+        "message": "Profile updated successfully",
+        "voter": {
+            "id": voter.id,
+            "voter_id": voter.voter_id,
+            "full_name": voter.full_name,
+            "email": voter.email,
+            "district": voter.district,
+            "is_verified": voter.is_verified,
+            "has_voted": voter.has_voted,
+            "created_at": voter.created_at,
+        },
     }
 
 
@@ -359,6 +709,12 @@ async def register_voter(
         phone=voter.phone,
 
         constituency=voter.constituency
+    )
+
+    new_voter.registration_hash = calculate_registration_hash(
+        new_voter.voter_id,
+        new_voter.cnic,
+        new_voter.full_name
     )
 
     db.add(new_voter)
@@ -467,6 +823,88 @@ async def get_candidates(
 
 
 # =====================================
+# CREATE CANDIDATE
+# =====================================
+
+@app.post("/candidates")
+async def create_candidate(
+
+    candidate: CandidateCreateSchema,
+
+    db: AsyncSession = Depends(get_db),
+
+    _: dict = Depends(require_admin)
+
+):
+
+    new_candidate = Candidate(
+
+        name=candidate.name,
+
+        party=candidate.party,
+
+        symbol=candidate.symbol,
+
+        district=candidate.district,
+
+        constituency=candidate.district,
+
+        votes=0,
+
+    )
+
+    db.add(new_candidate)
+
+    await db.commit()
+
+    return {
+
+        "success": True,
+
+        "message": "Candidate created successfully",
+
+    }
+
+
+# =====================================
+# DELETE CANDIDATE
+# =====================================
+
+@app.delete("/candidates/{id}")
+async def delete_candidate(
+
+    id: int,
+
+    db: AsyncSession = Depends(get_db),
+
+    _: dict = Depends(require_admin)
+
+):
+
+    candidate_result = await db.execute(
+        select(Candidate).where(Candidate.id == id)
+    )
+
+    candidate = candidate_result.scalars().first()
+
+    if not candidate:
+
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    await db.delete(candidate)
+
+    await db.commit()
+
+    return {
+
+        "success": True,
+
+        "message": "Candidate deleted successfully",
+
+    }
+
+
+# =====================================
 # CAST VOTE
 # =====================================
 
@@ -475,21 +913,46 @@ async def cast_vote(
 
     vote: VoteSchema,
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 
 ):
     vote_limiter.check(get_client_ip(request))
 
-    # Find voter
+    voter = None
 
-    voter_result = await db.execute(
+    if credentials:
+        try:
+            payload = jwt.decode(
+                credentials.credentials,
+                VOTER_JWT_SECRET,
+                algorithms=[VOTER_JWT_ALGORITHM]
+            )
+        except JWTError:
+            return {
+                "success": False,
+                "message": "Invalid token"
+            }
 
-        select(Voter).where(
-            Voter.voter_id == vote.voter_id
+        if payload.get("role") != "voter":
+            return {
+                "success": False,
+                "message": "Not authorized"
+            }
+
+        voter_id = payload.get("voter_id")
+        voter_result = await db.execute(
+            select(Voter).where(Voter.voter_id == voter_id)
         )
-    )
+        voter = voter_result.scalars().first()
 
-    voter = voter_result.scalars().first()
+    if not voter and vote.voter_id:
+        voter_result = await db.execute(
+            select(Voter).where(
+                Voter.voter_id == vote.voter_id
+            )
+        )
+        voter = voter_result.scalars().first()
 
     if not voter:
 
@@ -561,7 +1024,11 @@ async def cast_vote(
 
         receipt_code=receipt_code,
 
-        blockchain_hash=blockchain_hash
+        vote_hash=calculate_vote_hash(voter.id, candidate.id, receipt_code),
+
+        blockchain_hash=blockchain_hash,
+
+        timestamp=datetime.utcnow()
     )
 
     db.add(new_vote)
@@ -1026,6 +1493,572 @@ async def get_admin_stats(
 
 
 # =====================================
+# ADMIN — AUDIT VIEWER
+# GET /admin/audit
+# =====================================
+
+@app.get("/admin/audit")
+async def get_admin_audit(
+    page: int = 1,
+    page_size: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    from sqlalchemy import func as sqlfunc
+
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 200)
+
+    base_query = select(AuditLog)
+    count_query = select(sqlfunc.count(AuditLog.id))
+
+    total = await db.scalar(count_query) or 0
+    offset = (safe_page - 1) * safe_page_size
+
+    result = await db.execute(
+        base_query
+        .order_by(AuditLog.timestamp.desc(), AuditLog.created_at.desc())
+        .offset(offset)
+        .limit(safe_page_size)
+    )
+
+    logs = result.scalars().all()
+
+    def categorize_action(action: str) -> str:
+        if not action:
+            return "system"
+        label = action.upper()
+        if "REGISTER" in label:
+            return "registration"
+        if "VERIFY" in label or "FACE" in label:
+            return "verification"
+        if "VOTE" in label:
+            return "voting"
+        if "ADMIN" in label or "CANDIDATE" in label:
+            return "administration"
+        if any(token in label for token in ["RECOVER", "RESET", "LOGIN", "LOCKOUT", "FLAG"]):
+            return "security"
+        return "system"
+
+    def resolve_event_type(action: str) -> str:
+        if not action:
+            return "System event"
+        label = action.upper()
+        if "REGISTER" in label:
+            return "Registration completed"
+        if "VERIFY" in label:
+            return "Verification completed"
+        if "FACE" in label:
+            return "Face verification"
+        if "VOTE" in label:
+            return "Vote cast"
+        if "CANDIDATE" in label and "CREATE" in label:
+            return "Candidate created"
+        if "CANDIDATE" in label and "DELETE" in label:
+            return "Candidate deleted"
+        if "ADMIN" in label and "LOGIN" in label:
+            return "Admin login"
+        if "RECOVER" in label or "RESET" in label:
+            return "Recovery event"
+        if "FLAG" in label:
+            return "Security flag"
+        return "System event"
+
+    def resolve_status(severity: str) -> str:
+        if not severity:
+            return "Success"
+        label = severity.lower()
+        if label in {"warning"}:
+            return "Warning"
+        if label in {"error", "critical"}:
+            return "Flagged"
+        return "Success"
+
+    def format_timestamp(value):
+        if not value:
+            return None
+        return value.replace(microsecond=0).isoformat(sep=" ")
+
+    records = [
+        {
+            "event_type": resolve_event_type(log.action),
+            "timestamp": format_timestamp(log.timestamp or log.created_at),
+            "status": resolve_status(log.severity),
+            "category": categorize_action(log.action),
+            "description": log.details,
+        }
+        for log in logs
+    ]
+
+    total_pages = (total + safe_page_size - 1) // safe_page_size if safe_page_size else 0
+
+    return {
+        "total": int(total),
+        "page": safe_page,
+        "page_size": safe_page_size,
+        "total_pages": int(total_pages),
+        "records": records,
+    }
+
+
+# =====================================
+# ADMIN — SUSPICIOUS ACTIVITY
+# GET /admin/suspicious-activity
+# =====================================
+
+@app.get("/admin/suspicious-activity")
+async def get_suspicious_activity(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    now = datetime.utcnow()
+    window_start = now - timedelta(hours=24)
+
+    result = await db.execute(
+        select(AuditLog)
+        .order_by(AuditLog.timestamp.desc(), AuditLog.created_at.desc())
+        .limit(1000)
+    )
+
+    logs = result.scalars().all()
+
+    def log_time(entry: AuditLog):
+        return entry.timestamp or entry.created_at
+
+    def is_recent(entry: AuditLog) -> bool:
+        timestamp = log_time(entry)
+        return bool(timestamp and timestamp >= window_start)
+
+    recent_logs = [log for log in logs if is_recent(log)]
+
+    def match_action(entry: AuditLog, *tokens: str) -> bool:
+        if not entry.action:
+            return False
+        label = entry.action.upper()
+        return all(token in label for token in tokens)
+
+    def match_any(entry: AuditLog, *tokens: str) -> bool:
+        if not entry.action:
+            return False
+        label = entry.action.upper()
+        return any(token in label for token in tokens)
+
+    def is_failure(entry: AuditLog) -> bool:
+        if not entry.severity:
+            return False
+        return entry.severity.lower() in {"warning", "error", "critical"}
+
+    def count(predicate) -> int:
+        return sum(1 for log in recent_logs if predicate(log))
+
+    def severity_from_count(value: int, low: int, medium: int, high: int) -> str:
+        if value >= high:
+            return "Critical"
+        if value >= medium:
+            return "High"
+        if value >= low:
+            return "Medium"
+        return "Low"
+
+    def format_timestamp(value):
+        if not value:
+            return None
+        return value.replace(microsecond=0).isoformat(sep=" ")
+
+    alerts = []
+
+    verification_failures = count(
+        lambda log: is_failure(log) and match_any(log, "VERIFY", "FACE")
+    )
+    if verification_failures >= 5:
+        alerts.append({
+            "alert_type": "Repeated verification failures",
+            "timestamp": format_timestamp(now),
+            "severity": severity_from_count(verification_failures, 5, 7, 10),
+            "description": f"{verification_failures} failed verification events in the last 24 hours.",
+            "status": "Open",
+        })
+
+    login_failures = count(
+        lambda log: is_failure(log) and match_any(log, "LOGIN") and not match_any(log, "ADMIN")
+    )
+    if login_failures >= 5:
+        alerts.append({
+            "alert_type": "Repeated login failures",
+            "timestamp": format_timestamp(now),
+            "severity": severity_from_count(login_failures, 5, 7, 10),
+            "description": f"{login_failures} failed login events in the last 24 hours.",
+            "status": "Open",
+        })
+
+    admin_login_failures = count(
+        lambda log: is_failure(log) and match_action(log, "ADMIN", "LOGIN")
+    )
+    if admin_login_failures >= 3:
+        alerts.append({
+            "alert_type": "Repeated admin login failures",
+            "timestamp": format_timestamp(now),
+            "severity": severity_from_count(admin_login_failures, 3, 5, 8),
+            "description": f"{admin_login_failures} failed admin logins in the last 24 hours.",
+            "status": "Open",
+        })
+
+    reset_attempts = count(
+        lambda log: match_any(log, "RESET", "RECOVER")
+    )
+    if reset_attempts >= 3:
+        alerts.append({
+            "alert_type": "Repeated password reset attempts",
+            "timestamp": format_timestamp(now),
+            "severity": severity_from_count(reset_attempts, 3, 6, 10),
+            "description": f"{reset_attempts} reset or recovery events in the last 24 hours.",
+            "status": "Open",
+        })
+
+    registration_events = count(
+        lambda log: match_any(log, "REGISTER")
+    )
+    if registration_events >= 20:
+        alerts.append({
+            "alert_type": "Registration spike",
+            "timestamp": format_timestamp(now),
+            "severity": severity_from_count(registration_events, 20, 35, 50),
+            "description": f"{registration_events} registration events in the last 24 hours.",
+            "status": "Open",
+        })
+
+    flagged_voters = count(
+        lambda log: match_any(log, "FLAG")
+    )
+    if flagged_voters >= 5:
+        alerts.append({
+            "alert_type": "Repeated security flags",
+            "timestamp": format_timestamp(now),
+            "severity": severity_from_count(flagged_voters, 5, 8, 12),
+            "description": f"{flagged_voters} voter flag events in the last 24 hours.",
+            "status": "Open",
+        })
+
+    return {
+        "window_hours": 24,
+        "total": len(alerts),
+        "records": alerts,
+    }
+
+
+# =====================================
+# PUBLIC STATS
+# GET /public/stats
+# =====================================
+
+@app.get("/public/registrations")
+async def get_public_registrations(
+    page: int = 1,
+    page_size: int = 20,
+    q: str = "",
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import func as sqlfunc
+
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 100)
+
+    base_query = select(Voter)
+    count_query = select(sqlfunc.count(Voter.id))
+
+    search_value = q.strip()
+
+    if search_value:
+        search_filter = Voter.voter_id.ilike(f"%{search_value}%")
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
+    total = await db.scalar(count_query) or 0
+
+    offset = (safe_page - 1) * safe_page_size
+
+    result = await db.execute(
+        base_query
+        .order_by(Voter.created_at.desc())
+        .offset(offset)
+        .limit(safe_page_size)
+    )
+
+    voters = result.scalars().all()
+
+    def resolve_status(voter: Voter) -> str:
+        if voter.is_pending:
+            return "Pending"
+        if voter.is_verified is False:
+            return "Rejected"
+        return "Verified"
+
+    def format_date(value):
+        if not value:
+            return None
+        return value.date().isoformat()
+
+    records = [
+        {
+            "registration_id": v.voter_id,
+            "registration_date": format_date(v.created_at),
+            "status": resolve_status(v),
+        }
+        for v in voters
+    ]
+
+    total_pages = (total + safe_page_size - 1) // safe_page_size if safe_page_size else 0
+
+    return {
+        "total": int(total),
+        "page": safe_page,
+        "page_size": safe_page_size,
+        "total_pages": int(total_pages),
+        "records": records,
+    }
+
+
+# =====================================
+# PUBLIC VOTE LEDGER
+# GET /public/votes
+# =====================================
+
+@app.get("/public/votes")
+async def get_public_votes(
+    page: int = 1,
+    page_size: int = 20,
+    q: str = "",
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import func as sqlfunc
+
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 100)
+
+    base_query = select(Vote)
+    count_query = select(sqlfunc.count(Vote.id))
+
+    search_value = q.strip()
+
+    if search_value:
+        search_filter = (
+            Vote.receipt_code.ilike(f"%{search_value}%")
+            | Vote.blockchain_hash.ilike(f"%{search_value}%")
+        )
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
+    total = await db.scalar(count_query) or 0
+
+    offset = (safe_page - 1) * safe_page_size
+
+    result = await db.execute(
+        base_query
+        .order_by(Vote.created_at.desc())
+        .offset(offset)
+        .limit(safe_page_size)
+    )
+
+    votes = result.scalars().all()
+
+    def resolve_status(vote: Vote) -> str:
+        if not vote.blockchain_hash:
+            return "Pending Verification"
+        return "Verified"
+
+    def format_timestamp(value):
+        if not value:
+            return None
+        return value.replace(microsecond=0).isoformat(sep=" ")
+
+    records = [
+        {
+            "receipt_id": v.receipt_code,
+            "timestamp": format_timestamp(v.timestamp or v.created_at),
+            "status": resolve_status(v),
+        }
+        for v in votes
+    ]
+
+    total_pages = (total + safe_page_size - 1) // safe_page_size if safe_page_size else 0
+
+    return {
+        "total": int(total),
+        "page": safe_page,
+        "page_size": safe_page_size,
+        "total_pages": int(total_pages),
+        "records": records,
+    }
+
+
+# =====================================
+# PUBLIC AUDIT LEDGER
+# GET /public/audit
+# =====================================
+
+@app.get("/public/audit")
+async def get_public_audit(
+    page: int = 1,
+    page_size: int = 25,
+    category: str = "all",
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import func as sqlfunc
+
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 100)
+    normalized_category = (category or "all").strip().lower()
+
+    base_query = select(AuditLog)
+    count_query = select(sqlfunc.count(AuditLog.id))
+
+    def categorize_action(action: str) -> str:
+        if not action:
+            return "system"
+        label = action.upper()
+        if "REGISTER" in label:
+            return "registration"
+        if "VERIFY" in label:
+            return "verification"
+        if "VOTE" in label:
+            return "voting"
+        if "ADMIN" in label:
+            return "admin"
+        if "CANDIDATE" in label:
+            return "system"
+        return "system"
+
+    if normalized_category != "all":
+        action_value = AuditLog.action
+        if normalized_category == "registration":
+            category_filter = action_value.ilike("%REGISTER%")
+        elif normalized_category == "verification":
+            category_filter = action_value.ilike("%VERIFY%")
+        elif normalized_category == "voting":
+            category_filter = action_value.ilike("%VOTE%")
+        elif normalized_category == "admin":
+            category_filter = action_value.ilike("%ADMIN%")
+        elif normalized_category == "system":
+            category_filter = (
+                action_value.is_(None)
+                | (
+                    (~action_value.ilike("%REGISTER%"))
+                    & (~action_value.ilike("%VERIFY%"))
+                    & (~action_value.ilike("%VOTE%"))
+                    & (~action_value.ilike("%ADMIN%"))
+                )
+            )
+        else:
+            category_filter = action_value.isnot(None)
+
+        base_query = base_query.where(category_filter)
+        count_query = count_query.where(category_filter)
+
+    total = await db.scalar(count_query) or 0
+
+    offset = (safe_page - 1) * safe_page_size
+
+    result = await db.execute(
+        base_query
+        .order_by(AuditLog.timestamp.desc(), AuditLog.created_at.desc())
+        .offset(offset)
+        .limit(safe_page_size)
+    )
+
+    logs = result.scalars().all()
+
+    def resolve_event_type(action: str) -> str:
+        if not action:
+            return "System status updated"
+        label = action.upper()
+        if "REGISTER" in label:
+            return "Registration completed"
+        if "VERIFY" in label:
+            return "Verification completed"
+        if "VOTE" in label:
+            return "Vote successfully cast"
+        if "ADMIN" in label:
+            return "Admin action logged"
+        if "CANDIDATE" in label:
+            return "Candidate action logged"
+        return "System status updated"
+
+    def resolve_status(severity: str) -> str:
+        if not severity:
+            return "Success"
+        label = severity.lower()
+        if label in {"warning"}:
+            return "Warning"
+        if label in {"error", "critical"}:
+            return "Flagged"
+        return "Success"
+
+    def format_timestamp(value):
+        if not value:
+            return None
+        return value.replace(microsecond=0).isoformat(sep=" ")
+
+    records = [
+        {
+            "event_type": resolve_event_type(log.action),
+            "timestamp": format_timestamp(log.timestamp or log.created_at),
+            "status": resolve_status(log.severity),
+            "category": categorize_action(log.action),
+        }
+        for log in logs
+    ]
+
+    total_pages = (total + safe_page_size - 1) // safe_page_size if safe_page_size else 0
+
+    return {
+        "total": int(total),
+        "page": safe_page,
+        "page_size": safe_page_size,
+        "total_pages": int(total_pages),
+        "records": records,
+    }
+
+@app.get("/public/stats")
+async def get_public_stats(
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import func as sqlfunc
+
+    total_registered_voters = await db.scalar(
+        select(sqlfunc.count(Voter.id))
+    ) or 0
+
+    total_votes_cast = await db.scalar(
+        select(sqlfunc.count(Vote.id))
+    ) or 0
+
+    successful_verifications = await db.scalar(
+        select(sqlfunc.count(Voter.id)).where(
+            Voter.face_embedding.isnot(None)
+        )
+    ) or 0
+
+    failed_verifications = await db.scalar(
+        select(sqlfunc.count(Voter.id)).where(
+            Voter.is_pending == True
+        )
+    ) or 0
+
+    has_verification_data = (successful_verifications + failed_verifications) > 0
+
+    return {
+        "total_registered_voters": int(total_registered_voters),
+        "total_votes_cast": int(total_votes_cast),
+        "election_status": "Voting Open",
+        "verification_statistics": {
+            "available": has_verification_data,
+            "successful_verifications": int(successful_verifications) if has_verification_data else None,
+            "failed_verifications": int(failed_verifications) if has_verification_data else None,
+        },
+    }
+
+
+# =====================================
 # ADMIN — FLAG VOTER FOR MANUAL REVIEW
 # POST /admin/flag-voter/{voter_id}
 # =====================================
@@ -1080,3 +2113,418 @@ async def get_all_voters(
         }
         for v in voters
     ]
+
+
+# =====================================
+# ADMIN — AUDIT DASHBOARD STATS
+# GET /admin/audit-dashboard
+# =====================================
+
+@app.get("/admin/audit-dashboard")
+async def get_admin_audit_dashboard(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    from sqlalchemy import func as sqlfunc
+    from datetime import datetime, timedelta
+
+    # 1. Base counts
+    total_registrations = await db.scalar(select(sqlfunc.count(Voter.id))) or 0
+    successful_registrations = await db.scalar(
+        select(sqlfunc.count(Voter.id)).where((Voter.is_verified == True) & (Voter.is_pending == False))
+    ) or 0
+    successful_verifications = await db.scalar(
+        select(sqlfunc.count(Voter.id)).where(Voter.face_embedding.isnot(None))
+    ) or 0
+    failed_verifications = await db.scalar(
+        select(sqlfunc.count(Voter.id)).where(Voter.is_pending == True)
+    ) or 0
+    votes_cast = await db.scalar(select(sqlfunc.count(Vote.id))) or 0
+    verification_codes_generated = votes_cast
+
+    # 2. Audit and system events
+    audit_events_logged = await db.scalar(select(sqlfunc.count(AuditLog.id))) or 0
+
+    admin_actions_logged = await db.scalar(
+        select(sqlfunc.count(AuditLog.id)).where(
+            AuditLog.action.ilike("%ADMIN%") | AuditLog.action.ilike("%CANDIDATE%") | AuditLog.action.ilike("%FLAG%")
+        )
+    ) or 0
+
+    registration_events_count = await db.scalar(
+        select(sqlfunc.count(AuditLog.id)).where(AuditLog.action.ilike("%REGISTER%"))
+    ) or 0
+
+    verification_events_count = await db.scalar(
+        select(sqlfunc.count(AuditLog.id)).where(
+            AuditLog.action.ilike("%VERIFY%") | AuditLog.action.ilike("%FACE%")
+        )
+    ) or 0
+
+    voting_events_count = await db.scalar(
+        select(sqlfunc.count(AuditLog.id)).where(AuditLog.action.ilike("%VOTE%"))
+    ) or 0
+
+    security_events_count = await db.scalar(
+        select(sqlfunc.count(AuditLog.id)).where(
+            AuditLog.action.ilike("%RECOVER%") |
+            AuditLog.action.ilike("%RESET%") |
+            AuditLog.action.ilike("%LOGIN%") |
+            AuditLog.action.ilike("%LOCKOUT%") |
+            AuditLog.action.ilike("%FLAG%")
+        )
+    ) or 0
+
+    system_events_logged = await db.scalar(
+        select(sqlfunc.count(AuditLog.id)).where(
+            ~AuditLog.action.ilike("%REGISTER%") &
+            ~AuditLog.action.ilike("%VERIFY%") &
+            ~AuditLog.action.ilike("%FACE%") &
+            ~AuditLog.action.ilike("%VOTE%") &
+            ~AuditLog.action.ilike("%RECOVER%") &
+            ~AuditLog.action.ilike("%RESET%") &
+            ~AuditLog.action.ilike("%LOGIN%") &
+            ~AuditLog.action.ilike("%LOCKOUT%") &
+            ~AuditLog.action.ilike("%FLAG%") &
+            ~AuditLog.action.ilike("%ADMIN%") &
+            ~AuditLog.action.ilike("%CANDIDATE%")
+        )
+    ) or 0
+
+    # 3. Suspicious Activity (Rule-based dynamically calculated from 24h window)
+    now = datetime.utcnow()
+    window_start = now - timedelta(hours=24)
+
+    result = await db.execute(
+        select(AuditLog)
+        .order_by(AuditLog.timestamp.desc(), AuditLog.created_at.desc())
+        .limit(1000)
+    )
+    logs = result.scalars().all()
+
+    def log_time(entry: AuditLog):
+        return entry.timestamp or entry.created_at
+
+    def is_recent(entry: AuditLog) -> bool:
+        t = log_time(entry)
+        return bool(t and t >= window_start)
+
+    recent_logs = [log for log in logs if is_recent(log)]
+
+    def match_action(entry: AuditLog, *tokens: str) -> bool:
+        if not entry.action:
+            return False
+        label = entry.action.upper()
+        return all(token in label for token in tokens)
+
+    def match_any(entry: AuditLog, *tokens: str) -> bool:
+        if not entry.action:
+            return False
+        label = entry.action.upper()
+        return any(token in label for token in tokens)
+
+    def is_failure(entry: AuditLog) -> bool:
+        if not entry.severity:
+            return False
+        return entry.severity.lower() in {"warning", "error", "critical"}
+
+    def count_recent(predicate) -> int:
+        return sum(1 for log in recent_logs if predicate(log))
+
+    def severity_from_count(value: int, low: int, medium: int, high: int) -> str:
+        if value >= high:
+            return "Critical"
+        if value >= medium:
+            return "High"
+        if value >= low:
+            return "Medium"
+        return "Low"
+
+    alerts = []
+
+    # Repeated verification failures
+    verification_failures = count_recent(lambda log: is_failure(log) and match_any(log, "VERIFY", "FACE"))
+    if verification_failures >= 5:
+        alerts.append({
+            "severity": severity_from_count(verification_failures, 5, 7, 10)
+        })
+
+    # Repeated login failures
+    login_failures = count_recent(lambda log: is_failure(log) and match_any(log, "LOGIN") and not match_any(log, "ADMIN"))
+    if login_failures >= 5:
+        alerts.append({
+            "severity": severity_from_count(login_failures, 5, 7, 10)
+        })
+
+    # Repeated admin login failures
+    admin_login_failures = count_recent(lambda log: is_failure(log) and match_action(log, "ADMIN", "LOGIN"))
+    if admin_login_failures >= 3:
+        alerts.append({
+            "severity": severity_from_count(admin_login_failures, 3, 5, 8)
+        })
+
+    # Repeated password reset attempts
+    reset_attempts = count_recent(lambda log: match_any(log, "RESET", "RECOVER"))
+    if reset_attempts >= 3:
+        alerts.append({
+            "severity": severity_from_count(reset_attempts, 3, 6, 10)
+        })
+
+    # Registration spike
+    registration_events = count_recent(lambda log: match_any(log, "REGISTER"))
+    if registration_events >= 20:
+        alerts.append({
+            "severity": severity_from_count(registration_events, 20, 35, 50)
+        })
+
+    # Repeated security flags
+    flagged_voters = count_recent(lambda log: match_any(log, "FLAG"))
+    if flagged_voters >= 5:
+        alerts.append({
+            "severity": severity_from_count(flagged_voters, 5, 8, 12)
+        })
+
+    suspicious_counts = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0}
+    for alert in alerts:
+        sev = alert["severity"]
+        if sev in suspicious_counts:
+            suspicious_counts[sev] += 1
+
+    # 4. Daily activity trend (last 7 days)
+    seven_days_ago = now - timedelta(days=6)
+    seven_days_ago = seven_days_ago.replace(hour=0, minute=0, second=0, microsecond=0)
+    date_col = sqlfunc.date(sqlfunc.coalesce(AuditLog.timestamp, AuditLog.created_at))
+    trend_query = (
+        select(date_col.label("date"), sqlfunc.count(AuditLog.id).label("count"))
+        .where(sqlfunc.coalesce(AuditLog.timestamp, AuditLog.created_at) >= seven_days_ago)
+        .group_by(date_col)
+        .order_by(date_col.asc())
+    )
+    trend_result = await db.execute(trend_query)
+    trend_rows = trend_result.all()
+
+    trend_map = {row.date: row.count for row in trend_rows}
+    daily_activity_trend = []
+    for i in range(7):
+        day = now - timedelta(days=6 - i)
+        day_str = day.strftime("%Y-%m-%d")
+        daily_activity_trend.append({
+            "date": day.strftime("%b %d"),
+            "count": trend_map.get(day_str, 0)
+        })
+
+    # 5. Insights
+    insights = []
+
+    # Insight 1: Verification success rate
+    total_verifications = successful_verifications + failed_verifications
+    if total_verifications > 0:
+        rate = (successful_verifications / total_verifications) * 100
+        insights.append(f"Verification success rate: {round(rate, 1)}%")
+    else:
+        insights.append("Verification success rate: 100% (No verifications recorded)")
+
+    # Insight 2: Most common audit event
+    common_query = (
+        select(AuditLog.action, sqlfunc.count(AuditLog.id).label("cnt"))
+        .group_by(AuditLog.action)
+        .order_by(sqlfunc.count(AuditLog.id).desc())
+        .limit(1)
+    )
+    common_res = await db.execute(common_query)
+    common_row = common_res.first()
+    if common_row and common_row[0]:
+        insights.append(f"Most common audit event: {common_row[0]}")
+    else:
+        insights.append("Most common audit event: None")
+
+    # Insight 3: High severity alerts
+    high_critical_alerts = suspicious_counts["High"] + suspicious_counts["Critical"]
+    insights.append(f"High severity alerts this week: {high_critical_alerts}")
+
+    # Build response payload
+    return {
+        "metrics": {
+            "total_registrations": total_registrations,
+            "successful_registrations": successful_registrations,
+            "successful_verifications": successful_verifications,
+            "failed_verifications": failed_verifications,
+            "votes_cast": votes_cast,
+            "verification_codes_generated": verification_codes_generated,
+            "suspicious_activity_alerts": len(alerts),
+            "admin_actions_logged": admin_actions_logged,
+            "audit_events_logged": audit_events_logged,
+            "system_events_logged": system_events_logged
+        },
+        "visualizations": {
+            "event_distribution": [
+                { "name": "Registration", "value": registration_events_count },
+                { "name": "Verification", "value": verification_events_count },
+                { "name": "Voting", "value": voting_events_count },
+                { "name": "Security", "value": security_events_count },
+                { "name": "Admin", "value": admin_actions_logged }
+            ],
+            "verification_outcomes": [
+                { "name": "Successful", "value": successful_verifications },
+                { "name": "Failed", "value": failed_verifications }
+            ],
+            "suspicious_activity_breakdown": [
+                { "name": "Low", "value": suspicious_counts["Low"] },
+                { "name": "Medium", "value": suspicious_counts["Medium"] },
+                { "name": "High", "value": suspicious_counts["High"] },
+                { "name": "Critical", "value": suspicious_counts["Critical"] }
+            ],
+            "daily_activity_trend": daily_activity_trend
+        },
+        "insights": insights
+    }
+
+
+# =====================================
+# ADMIN — AUDIT EXPORT
+# GET /admin/audit/export/csv
+# GET /admin/audit/export/pdf
+# =====================================
+
+@app.get("/admin/audit/export/csv")
+async def export_audit_csv(
+    filter_category: str = None,
+    filter_severity: str = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    query = select(AuditLog).order_by(AuditLog.timestamp.desc())
+    if filter_severity and filter_severity != "All":
+        query = query.filter(AuditLog.severity == filter_severity.lower())
+    
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Timestamp", "Action", "Severity", "Details"])
+
+    for log in logs:
+        time_str = log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else ""
+        writer.writerow([time_str, log.action, log.severity, log.details])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit-report.csv"}
+    )
+
+@app.get("/admin/audit/export/pdf")
+async def export_audit_pdf(
+    filter_category: str = None,
+    filter_severity: str = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    if FPDF is None:
+        raise HTTPException(status_code=500, detail="PDF library not installed")
+
+    query = select(AuditLog).order_by(AuditLog.timestamp.desc())
+    if filter_severity and filter_severity != "All":
+        query = query.filter(AuditLog.severity == filter_severity.lower())
+    
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("helvetica", "B", 16)
+    pdf.cell(0, 10, "HV Verify Audit Report", new_x="LMARGIN", new_y="NEXT", align="C")
+    
+    pdf.set_font("helvetica", "", 12)
+    pdf.cell(0, 10, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.ln(10)
+
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(45, 10, "Timestamp", border=1)
+    pdf.cell(55, 10, "Action", border=1)
+    pdf.cell(25, 10, "Severity", border=1)
+    pdf.cell(65, 10, "Details", border=1, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("helvetica", "", 10)
+    for log in logs[:100]: # Limiting for PDF rendering performance
+        time_str = log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else ""
+        pdf.cell(45, 10, time_str, border=1)
+        pdf.cell(55, 10, str(log.action)[:25], border=1)
+        pdf.cell(25, 10, str(log.severity)[:10], border=1)
+        pdf.cell(65, 10, str(log.details)[:35], border=1, new_x="LMARGIN", new_y="NEXT")
+
+    # In fpdf2, pdf.output() returns bytearray
+    return Response(content=bytes(pdf.output()), media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=audit-report.pdf"})
+
+
+# =====================================
+# ADMIN — SYSTEM INTEGRITY CHECK
+# GET /admin/integrity/check
+# =====================================
+
+@app.get("/admin/integrity/check")
+async def get_system_integrity_check(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    # Fetch all votes and voters
+    voters_result = await db.execute(select(Voter))
+    voters = voters_result.scalars().all()
+
+    votes_result = await db.execute(select(Vote))
+    votes = votes_result.scalars().all()
+
+    tampered_voters = []
+    tampered_votes = []
+
+    for voter in voters:
+        recalculated_hash = calculate_registration_hash(voter.voter_id, voter.cnic, voter.full_name)
+        if voter.registration_hash != recalculated_hash:
+            tampered_voters.append({
+                "id": voter.id,
+                "voter_id": voter.voter_id,
+                "full_name": voter.full_name,
+                "cnic": voter.cnic,
+                "stored_hash": voter.registration_hash,
+                "expected_hash": recalculated_hash
+            })
+
+    for vote in votes:
+        recalculated_hash = calculate_vote_hash(vote.voter_id, vote.candidate_id, vote.receipt_code)
+        if vote.vote_hash != recalculated_hash:
+            tampered_votes.append({
+                "id": vote.id,
+                "voter_id": vote.voter_id,
+                "candidate_id": vote.candidate_id,
+                "receipt_code": vote.receipt_code,
+                "stored_hash": vote.vote_hash,
+                "expected_hash": recalculated_hash
+            })
+
+    total_votes = len(votes)
+    total_voters = len(voters)
+    tampered_votes_count = len(tampered_votes)
+    tampered_voters_count = len(tampered_voters)
+
+    is_healthy = (tampered_votes_count == 0) and (tampered_voters_count == 0)
+
+    # Log audit event
+    await audit(
+        db,
+        "INTEGRITY_CHECK_RUN",
+        f"Integrity check run. Healthy: {is_healthy}. Votes: {total_votes} ({tampered_votes_count} tampered). Voters: {total_voters} ({tampered_voters_count} tampered)",
+        "info" if is_healthy else "warning"
+    )
+
+    return {
+        "total_votes": total_votes,
+        "total_voters": total_voters,
+        "tampered_votes_count": tampered_votes_count,
+        "tampered_voters_count": tampered_voters_count,
+        "tampered_votes": tampered_votes,
+        "tampered_voters": tampered_voters,
+        "is_healthy": is_healthy
+    }
+

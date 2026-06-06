@@ -23,7 +23,13 @@ class Voter(Base):
 
     full_name = Column(String, nullable=False)
 
+    email = Column(String, unique=True, nullable=True)
+
+    password = Column(String, nullable=True)
+
     cnic = Column(String, unique=True, nullable=False)
+
+    district = Column(String, nullable=True)
 
     phone = Column(String, nullable=False)
 
@@ -40,6 +46,8 @@ class Voter(Base):
     is_pending = Column(Boolean, default=False)
 
     pending_reason = Column(String, nullable=True)
+
+    registration_hash = Column(String, nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
@@ -58,6 +66,8 @@ class Candidate(Base):
     party = Column(String, nullable=False)
 
     symbol = Column(String)
+
+    district = Column(String)
 
     constituency = Column(String)
 
@@ -90,7 +100,11 @@ class Vote(Base):
         unique=True
     )
 
+    vote_hash = Column(String)
+
     blockchain_hash = Column(String)
+
+    timestamp = Column(DateTime(timezone=True))
 
     created_at = Column(
         DateTime(timezone=True),
@@ -107,6 +121,8 @@ class AuditLog(Base):
     action = Column(String)
 
     details = Column(Text)
+
+    timestamp = Column(DateTime(timezone=True))
 
     severity = Column(
         String,

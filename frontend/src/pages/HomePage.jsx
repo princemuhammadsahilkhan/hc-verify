@@ -95,7 +95,7 @@ function HomePage() {
           </p>
 
           <div className="hero-actions">
-            <Link className="button" to="/register">
+            <Link className="button" to="/auth">
               Start registration
               <ArrowRight size={16} />
             </Link>

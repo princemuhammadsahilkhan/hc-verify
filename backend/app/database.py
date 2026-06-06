@@ -1,7 +1,20 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "sqlite+aiosqlite:///./hc_verify.db"
+load_dotenv()
+
+# Get Database URL from environment, fallback to SQLite if not provided
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    # Default to sqlite if not configured in .env (for backward compatibility / safety fallback)
+    DATABASE_URL = "sqlite+aiosqlite:///./hc_verify.db"
+else:
+    # If standard postgresql url is provided, convert it to asyncpg dialect
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 engine = create_async_engine(
     DATABASE_URL,

@@ -1,0 +1,461 @@
+PROJECT DETAILED ANALYSIS
+Date: 2026-06-02
+
+Purpose
+This file breaks the project into phases from start to end and explains the main files, functions, user actions, backend actions, and data transitions in order. It is designed so you can compare the current implementation against your own phase list.
+
+Important note
+A literal line-by-line explanation of every source file in the repository would be extremely large and hard to compare. Instead, this document gives a detailed phase-by-phase analysis and lists the important functions in the order they are used. That makes it easier to compare against your phases while still covering the real control flow.
+
+PHASE 0: PROJECT FOUNDATION
+Goal
+- Set up the app structure, backend, frontend, and shared data model for voting, auth, face verification, and admin operations.
+
+Main files
+- backend/main.py
+- backend/app/models.py
+- backend/app/schemas.py
+- backend/app/auth.py
+- backend/app/database.py
+- backend/app/security_middleware.py
+- backend/app/utils/jwt_handler.py
+- backend/app/utils/security.py
+- frontend/src/App.jsx
+- frontend/src/main.jsx
+- frontend/src/api/index.js
+- frontend/src/layout/MainLayout.jsx
+- frontend/src/components/Navbar.jsx
+
+What this phase establishes
+- FastAPI backend serves all API routes.
+- React frontend uses Vite and React Router.
+- SQLite-backed models store voters, candidates, votes, and audit logs.
+- JWT authentication supports voter and admin flows.
+- Face verification uses a frontend liveness detector and backend face endpoints.
+
+Key functions and their roles
+- backend/main.py -> ensure_phase_one_schema(conn)
+  - Ensures the database schema exists and handles schema initialization/migration logic.
+- backend/main.py -> startup()
+  - Runs application startup tasks.
+- backend/main.py -> create_admin_token()
+  - Produces admin tokens used by administrative routes.
+- backend/main.py -> require_admin(...)
+  - Verifies admin authorization before admin-only actions.
+- backend/main.py -> get_current_voter(...)
+  - Decodes and validates voter JWT tokens for protected voter actions.
+
+PHASE 1: LANDING AND FIRST ENTRY
+Goal
+- Show the public landing experience and direct the user into the auth flow.
+
+Frontend files
+- frontend/src/pages/LandingPage.jsx
+- frontend/src/pages/HomePage.jsx
+- frontend/src/components/Navbar.jsx
+- frontend/src/components/ProtectedRoute.jsx
+
+Important functions
+- LandingPage -> Counter({ target, suffix })
+  - Animates counters on the landing page.
+- LandingPage -> StepCard({ step, index, active, onClick })
+  - Renders clickable step cards and visually explains the journey.
+- LandingPage -> Badge({ icon, label })
+  - Renders small informational labels.
+- LandingPage -> handleStepClick(i)
+  - Handles phase/step selection in the landing page.
+- HomePage -> HomePage()
+  - Public entry page used before login or registration.
+- Navbar -> Navbar()
+  - Controls top navigation.
+  - In the current version, the visible "Account" label/icon was removed.
+- ProtectedRoute -> ProtectedRoute({ children })
+  - Prevents access to protected routes when the required token is absent.
+
+Behavior in this phase
+- A user lands on the site and reads the overview.
+- Public UI points the user toward the auth page.
+- Protected routes are blocked until the required token or session exists.
+
+PHASE 2: AUTHENTICATION
+Goal
+- Let the user log in or start registration.
+- Keep the auth stage lightweight and separate from the face verification stage.
+
+Frontend file
+- frontend/src/pages/AuthPage.jsx
+
+Important functions
+- AuthPage -> AuthPage()
+  - Main auth screen.
+- handleRegisterChange(event)
+  - Updates signup form state.
+- handleLoginChange(event)
+  - Updates login form state.
+
+Behavior
+- User can log in or register.
+- CNIC was removed from the auth signup form.
+- Auth response no longer exposes voter_id at this stage.
+- On successful login, the app now routes to the Profile page.
+
+Backend functions and endpoints
+- backend/main.py -> auth_register(...)
+  - Creates a user account during auth signup.
+  - Adjusted so it does not return voter_id early.
+- backend/main.py -> auth_login(...)
+  - Verifies credentials and returns JWT.
+- backend/main.py -> auth_me(...)
+  - Returns the authenticated user profile.
+
+What data moves here
+- Credentials are validated.
+- JWT is issued on login.
+- User identity is established before any face verification begins.
+
+PHASE 3: PROFILE MANAGEMENT
+Goal
+- Give the logged-in user a place to edit their profile before registration.
+
+Frontend file
+- frontend/src/pages/ProfilePage.jsx
+
+Important functions
+- ProfilePage -> ProfilePage()
+  - Loads the current profile and renders editable fields.
+- handleChange(event)
+  - Updates the profile form state.
+- handleLogout()
+  - Removes auth state and navigates the user away.
+
+Backend endpoint
+- backend/main.py -> update_auth_me(...)
+  - Accepts profile updates.
+
+Behavior
+- User edits name, email, district, and optionally password.
+- Save action sends `PUT /auth/me`.
+- After saving, the user is redirected to registration.
+
+Why this phase matters
+- This creates a clean handoff: auth first, profile second, registration third.
+- It also keeps registration focused on identity verification instead of account editing.
+
+PHASE 4: REGISTRATION AND LIVENESS VERIFICATION
+Goal
+- Prove the user is physically present and register face data before voting.
+
+Frontend file
+- frontend/src/pages/RegisterPage.jsx
+- frontend/src/services/livenessDetector.js
+
+Important functions in RegisterPage.jsx
+- RegisterPage -> RegisterPage()
+  - Main registration and liveness verification screen.
+- speak = () => {}
+  - Safe no-op used to avoid the earlier runtime crash from undefined speech helper calls.
+- openVerification()
+  - Starts or opens the verification flow.
+- check()
+  - Periodic verification loop used during the liveness step.
+- advanceVerification()
+  - Moves the UI to the next verification step.
+- openModal(...)
+  - Opens the registration/verification modal with its current state.
+- closeModal()
+  - Closes the modal and resets state as needed.
+- handleChange(e)
+  - Updates registration-related form values.
+
+Behavior
+- Auth is required before starting the registration flow.
+- Frontend uses the liveness detector to check if the user is live and present.
+- Once the face is captured/verified, the frontend submits the data to the backend.
+- After success, the user is redirected to the Vote page with voter_id in navigation state.
+
+Backend functions and endpoints
+- backend/main.py -> register_voter(...)
+  - Registers the voter and stores the face embedding / voter record.
+- backend/main.py -> register_face(...)
+  - Stores face data as part of the biometric workflow.
+- backend/main.py -> verify_face(...)
+  - Compares face input against registered data.
+- backend/main.py -> check_face(...)
+  - Checks face embeddings or face presence as part of liveness/verification.
+
+What data moves here
+- Face image or embedding is captured.
+- Face data is compared or stored.
+- voter_id is generated after successful verification/registration.
+
+Why this phase matters
+- This is the trust-building phase of the system.
+- It connects the authenticated person to biometric verification before ballot access.
+
+PHASE 5: VOTING
+Goal
+- Allow the verified user to cast a vote.
+
+Frontend file
+- frontend/src/pages/VotePage.jsx
+
+Important functions
+- VotePage -> VotePage()
+  - Main ballot screen.
+- speak = () => {}
+  - Safe no-op helper to prevent runtime errors.
+- authenticate()
+  - Determines whether the vote request should use JWT or voter_id state.
+
+Behavior
+- The page accepts voter_id passed from the registration flow.
+- If JWT is present, the request uses Authorization header.
+- If JWT is not present, the request includes voter_id in the body.
+- Candidate selection triggers the vote request.
+
+Backend endpoint
+- backend/main.py -> cast_vote(...)
+  - Validates the voter and records the vote.
+
+What data moves here
+- Candidate selection is sent to the backend.
+- Vote record is stored in the database.
+- Receipt or success status is returned to the frontend.
+
+Why this phase matters
+- This is the core election action.
+- The current flow reduces friction by auto-filling voter identity after verification.
+
+PHASE 6: RECEIPT AND VERIFICATION
+Goal
+- Let the user confirm their vote or verify a receipt code.
+
+Frontend files
+- frontend/src/pages/VerifyPage.jsx
+- frontend/src/pages/ResultsPage.jsx
+- frontend/src/components/ResultsChart.jsx
+
+Important functions
+- VerifyPage -> VerifyPage()
+  - Handles receipt or verification display.
+- speak = () => {}
+  - Safe helper for the page.
+- ResultsPage -> ResultsPage()
+  - Displays election results or summary output.
+- ResultsChart -> ResultsChart()
+  - Renders chart-based result visualization.
+
+Backend endpoint
+- backend/main.py -> verify_vote(...)
+  - Verifies vote receipts or confirmation codes.
+
+Behavior
+- After voting, the user can check a receipt or confirmation path.
+- The system may expose a receipt-based verification method.
+
+PHASE 7: ADMIN FLOW
+Goal
+- Let administrators log in, manage candidates, inspect voters, and review stats.
+
+Frontend files
+- frontend/src/pages/AdminLogin.jsx
+- frontend/src/pages/AdminPage.jsx
+- frontend/src/components/SystemStatus.jsx
+- frontend/src/components/StatCard.jsx
+- frontend/src/components/CandidateCard.jsx
+
+Important functions
+- AdminLogin -> AdminLogin()
+  - Admin authentication entry screen.
+- AdminPage -> AdminPage()
+  - Main admin console.
+- handleCandidateChange(event)
+  - Updates candidate form data.
+- handleLogout()
+  - Removes admin token and returns to admin login.
+- tabStyle(t)
+  - Controls tab presentation and active state styling.
+- SystemStatus -> SystemStatus()
+  - Displays system health or operational state.
+- StatCard -> StatCard(...)
+  - Displays summary metrics.
+- CandidateCard -> CandidateCard(...)
+  - Shows candidate details in a reusable card.
+
+Backend functions and endpoints
+- backend/main.py -> admin_login(...)
+  - Verifies admin credentials and issues admin token.
+- backend/main.py -> get_voters(...)
+  - Returns voter records for admin review.
+- backend/main.py -> authenticate_voter(...)
+  - Admin-side voter verification endpoint.
+- backend/main.py -> get_candidates(...)
+  - Lists candidates.
+- backend/main.py -> create_candidate(...)
+  - Adds a candidate.
+- backend/main.py -> delete_candidate(...)
+  - Removes a candidate.
+- backend/main.py -> get_pending_voters(...)
+  - Lists voters waiting on review.
+- backend/main.py -> resolve_pending(...)
+  - Resolves pending voter records.
+- backend/main.py -> get_admin_stats(...)
+  - Returns admin dashboard metrics.
+- backend/main.py -> flag_voter(...)
+  - Flags a voter for review.
+- backend/main.py -> get_all_voters(...)
+  - Returns a broader voter list for admin use.
+
+Behavior
+- Admin login is separated from voter login.
+- Admins can inspect, manage, and review state without affecting voter flow.
+
+PHASE 8: RECOVERY, RESET, AND SECURITY SUPPORT
+Goal
+- Provide account recovery and security protection around the app.
+
+Backend functions
+- backend/main.py -> recover_with_key(data)
+  - Recovery flow using a key.
+- backend/main.py -> request_reset()
+  - Starts password reset flow.
+- backend/main.py -> reset_password(data)
+  - Completes password reset.
+
+Supporting files
+- backend/app/security_middleware.py
+- backend/app/utils/security.py
+- backend/app/utils/jwt_handler.py
+- backend/app/database.py
+
+Behavior
+- Rate limiting, validation, and account lockout are handled in middleware.
+- Password hashing is handled in the security utility layer.
+- JWT handling lives in the JWT helper.
+
+PHASE 9: CURRENT FIXES APPLIED DURING THIS WORK
+Goal
+- Stabilize the flow and make it usable end-to-end.
+
+What was fixed
+- The app was crashing on some pages because speak() was referenced without a safe definition.
+- The frontend build was verified successfully after the fixes.
+- The auth-to-profile-to-register-to-vote sequence was wired together.
+- voter_id is now passed forward at the correct time, after verification.
+
+What the final flow looks like now
+1. Open app
+2. Go to Auth
+3. Log in or register account
+4. Edit profile
+5. Save profile
+6. Go to Register
+7. Complete liveness / face verification
+8. Receive voter_id
+9. Go to Vote with voter_id auto-filled
+10. Select candidate and cast ballot
+11. Verify receipt if needed
+
+PHASE-BY-PHASE COMPARISON GUIDE
+Use this section to compare against your own phase list.
+- Phase 1 = Landing / public entry
+- Phase 2 = Auth / login / signup
+- Phase 3 = Profile editing
+- Phase 4 = Face verification / registration
+- Phase 5 = Vote casting
+- Phase 6 = Receipt / verification
+- Phase 7 = Admin flow
+- Phase 8 = Recovery / security
+- Phase 9 = Final integration fixes
+
+FILE-BY-FILE FUNCTION SUMMARY
+backend/main.py
+- ensure_phase_one_schema(conn): schema bootstrap/migration guard
+- create_admin_token(): admin token generation
+- require_admin(...): admin authorization guard
+- get_current_voter(...): voter JWT guard
+- startup(): startup event handler
+- root(): default root route
+- admin_login(...): admin authentication
+- auth_register(...): auth signup
+- auth_login(...): voter login
+- auth_me(...): get current profile
+- update_auth_me(...): update current profile
+- register_voter(...): voter registration
+- get_voters(...): list voters
+- authenticate_voter(...): admin-side voter auth
+- get_candidates(...): list candidates
+- create_candidate(...): create candidate
+- delete_candidate(...): delete candidate
+- cast_vote(...): cast ballot
+- verify_vote(...): verify receipt/status
+- results(...): return results
+- recover_with_key(...): recovery flow
+- request_reset(...): begin password reset
+- reset_password(...): complete password reset
+- register_face(...): save face data
+- verify_face(...): verify face data
+- get_pending_voters(...): pending voters list
+- resolve_pending(...): resolve pending records
+- check_face(...): face/liveness check
+- get_admin_stats(...): admin dashboard stats
+- flag_voter(...): flag a voter
+- get_all_voters(...): expanded voter list
+
+frontend/src/pages/AuthPage.jsx
+- AuthPage(): auth UI and login/signup state
+- handleRegisterChange(event): signup state changes
+- handleLoginChange(event): login state changes
+
+frontend/src/pages/ProfilePage.jsx
+- ProfilePage(): profile editor
+- handleChange(event): profile form changes
+- handleLogout(): log out flow
+
+frontend/src/pages/RegisterPage.jsx
+- RegisterPage(): registration + liveness UI
+- speak = () => {}: crash-safe helper
+- openVerification(): start verification
+- check(): verification loop
+- advanceVerification(): move to next verification step
+- openModal(...): open modal UI
+- closeModal(): close modal UI
+- handleChange(e): registration form changes
+
+frontend/src/pages/VotePage.jsx
+- VotePage(): vote UI
+- speak = () => {}: crash-safe helper
+- authenticate(): select JWT vs voter_id vote path
+
+frontend/src/pages/VerifyPage.jsx
+- VerifyPage(): receipt/verification UI
+- speak = () => {}: crash-safe helper
+
+frontend/src/pages/LandingPage.jsx
+- Counter(...): animated numbers
+- StepCard(...): process step cards
+- Badge(...): small labels
+- handleStepClick(i): step interaction
+
+frontend/src/pages/AdminPage.jsx
+- AdminPage(): admin dashboard
+- handleCandidateChange(event): candidate form
+- handleLogout(): admin logout
+- tabStyle(t): tab styling helper
+
+frontend/src/components/
+- Navbar(): navigation bar
+- ProtectedRoute(): auth guard
+- RegisterForm(): reusable registration form
+- ResultsChart(): chart renderer
+- SystemStatus(): system health display
+- StatCard(...): metric card
+- CandidateCard(...): candidate card
+
+FINAL INTERPRETATION
+- The project is currently organized as a phased workflow rather than a single linear script.
+- The important shift is that user identity is now established before biometric registration, and biometric registration happens before voting.
+- The frontend and backend are linked by a clear flow: Auth -> Profile -> Register -> Vote -> Verify.
+- The most important state handoff is voter_id, which is now created after verification and passed into voting.
+
+End of PROJECT_DETAILED_ANALYSIS.txt
