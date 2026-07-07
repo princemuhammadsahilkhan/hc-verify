@@ -563,3 +563,4 @@ To automatically create all database tables in PostgreSQL and migrate existing S
 
 # test webhook trigger
 # webhook test final
+# push event subscription test
