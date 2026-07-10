@@ -102,6 +102,7 @@ function RegisterPage() {
   // =====================================
 
   const openVerification = () => {
+    if (loading) return;
     // Feature flag: Bypass liveness detection if not explicitly enabled
     const livenessEnabled = import.meta.env.VITE_ENABLE_LIVENESS === "true";
     if (!livenessEnabled) {
@@ -452,12 +453,18 @@ function RegisterPage() {
   // =====================================
 
   const register = async (faceImage = null) => {
-
+    if (loading) return;
     try {
 
       setLoading(true);
 
-      const response = await API.post("/register", formData);
+      // Pass JWT if logged in so backend can UPDATE existing row instead of inserting a duplicate
+      const voterToken = localStorage.getItem("voterToken");
+      const requestConfig = voterToken
+        ? { headers: { Authorization: `Bearer ${voterToken}` } }
+        : undefined;
+
+      const response = await API.post("/register", formData, requestConfig);
 
       setSuccess(response.data.message);
 
@@ -640,6 +647,7 @@ function RegisterPage() {
           <div className="form-actions">
             <button
               className={`button${loading ? " is-loading" : ""}`}
+              disabled={loading}
               onClick={openVerification}
             >
               {loading ? (

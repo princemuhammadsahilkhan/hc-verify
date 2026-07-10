@@ -72,6 +72,80 @@ app = FastAPI()
 security = HTTPBearer(auto_error=False)
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Admin")
+from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, Response
+import csv
+import io
+import hashlib
+try:
+    from fpdf import FPDF
+except ImportError:
+    FPDF = None
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from app.database import Base, engine, get_db
+
+from app.models import (
+    Voter,
+    Candidate,
+    Vote,
+    AuditLog
+)
+
+from app.schemas import (
+    RegisterSchema,
+    AuthRegisterSchema,
+    AuthUpdateSchema,
+    LoginSchema,
+    CandidateCreateSchema,
+    VoteSchema
+)
+
+from app.utils.security import hash_password, verify_password
+from app.utils.jwt_handler import (
+    create_access_token,
+    SECRET_KEY as VOTER_JWT_SECRET,
+    ALGORITHM as VOTER_JWT_ALGORITHM,
+)
+
+import random
+import string
+import os
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+from pydantic import BaseModel
+
+
+load_dotenv()
+
+from app.face_service import extract_embedding, match_faces
+from app.security_middleware import (
+    login_limiter, vote_limiter, register_limiter,
+    get_client_ip, admin_lockout,
+    validate_registration,
+    audit,
+)
+from app.admin_recovery import (
+    ensure_recovery_key_exists,
+    verify_recovery_key,
+    rotate_recovery_key,
+    request_email_reset,
+    verify_reset_token,
+    consume_reset_token,
+    apply_new_credentials,
+)
+
+app = FastAPI()
+
+
+security = HTTPBearer(auto_error=False)
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin")
 ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "hcverify-admin-secret")
 ADMIN_TOKEN_ALGORITHM = "HS256"
@@ -80,7 +154,8 @@ ADMIN_TOKEN_EXPIRES_HOURS = 8
 
 class AdminLoginSchema(BaseModel):
 
-    username: str
+    username: str = None
+    email: str = None
 
     password: str
 
@@ -129,13 +204,15 @@ def ensure_phase_one_schema(conn):
                 raise
 
 
-def create_admin_token():
+def create_admin_token(sub: str = ADMIN_USERNAME, role_name: str = "admin", permissions: list = None):
 
     expire = datetime.utcnow() + timedelta(hours=ADMIN_TOKEN_EXPIRES_HOURS)
 
     payload = {
-        "sub": ADMIN_USERNAME,
-        "role": "admin",
+        "sub": sub,
+        "role": role_name,
+        "role_name": role_name,
+        "permissions": permissions or [],
         "exp": expire
     }
 
@@ -181,7 +258,9 @@ def require_admin(
             detail="Invalid token"
         )
 
-    if payload.get("sub") != ADMIN_USERNAME or payload.get("role") != "admin":
+    role = payload.get("role_name") or payload.get("role")
+    allowed_roles = ["admin", "super_admin", "election_commissioner", "district_admin", "polling_station_officer", "observer", "technical_support", "auditor", "viewer"]
+    if not role or role not in allowed_roles:
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -351,28 +430,62 @@ async def root():
 # =====================================
 
 @app.post("/admin/login")
-async def admin_login(credentials: AdminLoginSchema, request: Request):
-
+async def admin_login(credentials: AdminLoginSchema, request: Request, db: AsyncSession = Depends(get_db)):
     ip = get_client_ip(request)
     login_limiter.check(ip)
     admin_lockout.check("admin")
 
-    if (
-        credentials.username != ADMIN_USERNAME
-        or credentials.password != ADMIN_PASSWORD
-    ):
-        admin_lockout.record_failure("admin")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid admin credentials"
-        )
+    identity = credentials.username or credentials.email
+    if not identity:
+        raise HTTPException(status_code=400, detail="Username or email is required")
 
-    admin_lockout.record_success("admin")
-    token = create_admin_token()
-    return {
-        "access_token": token,
-        "token_type": "bearer"
-    }
+    from app.models import User, Role
+    from app.utils.security import verify_password_bcrypt
+
+    # 1. Try database credentials first
+    if "@" in identity:
+        res = await db.execute(select(User).where(User.email == identity))
+    else:
+        res = await db.execute(select(User).where(User.username == identity))
+    user = res.scalars().first()
+
+    if user:
+        if verify_password_bcrypt(credentials.password, user.password_hash):
+            role_res = await db.execute(select(Role).where(Role.role_id == user.role_id))
+            role_obj = role_res.scalars().first()
+            role_name = role_obj.role_name if role_obj else "viewer"
+
+            admin_lockout.record_success("admin")
+            token = create_admin_token(
+                sub=user.username,
+                role_name=role_name,
+                permissions=user.permissions or []
+            )
+            return {
+                "access_token": token,
+                "token_type": "bearer"
+            }
+
+    # 2. Fallback to .env hardcoded credentials
+    if (
+        identity == ADMIN_USERNAME
+        and credentials.password == ADMIN_PASSWORD
+    ):
+        admin_lockout.record_success("admin")
+        token = create_admin_token(
+            sub=ADMIN_USERNAME,
+            role_name="admin"
+        )
+        return {
+            "access_token": token,
+            "token_type": "bearer"
+        }
+
+    admin_lockout.record_failure("admin")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid admin credentials"
+    )
 
 
 # =====================================
@@ -387,7 +500,6 @@ async def auth_register(
     db: AsyncSession = Depends(get_db)
 
 ):
-
     existing_email = await db.execute(
         select(Voter).where(Voter.email == voter.email)
     )
@@ -469,7 +581,6 @@ async def auth_login(
     db: AsyncSession = Depends(get_db)
 
 ):
-
     result = await db.execute(
         select(Voter).where(Voter.email == user.email)
     )
@@ -563,7 +674,6 @@ async def update_auth_me(
     db: AsyncSession = Depends(get_db)
 
 ):
-
     voter_id = token_data.get("voter_id")
 
     result = await db.execute(
@@ -1324,8 +1434,11 @@ async def verify_face(
 @app.get("/admin/pending-voters")
 async def get_pending_voters(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     result = await db.execute(
         select(Voter).where(Voter.is_pending == True)
     )
@@ -1364,8 +1477,11 @@ async def resolve_pending(
     voter_id: str,
     data: ResolvePendingSchema,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     result = await db.execute(
         select(Voter).where(Voter.voter_id == voter_id)
     )
@@ -1502,8 +1618,11 @@ async def get_admin_audit(
     page: int = 1,
     page_size: int = 50,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     from sqlalchemy import func as sqlfunc
 
     safe_page = max(page, 1)
@@ -1581,6 +1700,13 @@ async def get_admin_audit(
 
     records = [
         {
+            "audit_id": str(log.audit_id) if log.audit_id else None,
+            "user": str(log.user_id) if log.user_id else "System",
+            "action_type": log.action_type,
+            "table_name": log.table_name,
+            "old_data": log.old_data,
+            "new_data": log.new_data,
+            "ip_address": log.ip_address,
             "event_type": resolve_event_type(log.action),
             "timestamp": format_timestamp(log.timestamp or log.created_at),
             "status": resolve_status(log.severity),
@@ -1609,8 +1735,11 @@ async def get_admin_audit(
 @app.get("/admin/suspicious-activity")
 async def get_suspicious_activity(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     now = datetime.utcnow()
     window_start = now - timedelta(hours=24)
 
@@ -2071,8 +2200,11 @@ async def flag_voter(
     voter_id: str,
     data: FlagVoterSchema,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     result = await db.execute(select(Voter).where(Voter.voter_id == voter_id))
     voter = result.scalars().first()
 
@@ -2096,8 +2228,11 @@ async def flag_voter(
 @app.get("/admin/voters")
 async def get_all_voters(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     result = await db.execute(select(Voter))
     voters = result.scalars().all()
     return [
@@ -2109,6 +2244,7 @@ async def get_all_voters(
             "has_voted": v.has_voted,
             "is_pending": v.is_pending,
             "pending_reason": v.pending_reason,
+            "district_id": str(v.district_id) if v.district_id else None,
             "created_at": str(v.created_at),
         }
         for v in voters
@@ -2123,8 +2259,11 @@ async def get_all_voters(
 @app.get("/admin/audit-dashboard")
 async def get_admin_audit_dashboard(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     from sqlalchemy import func as sqlfunc
     from datetime import datetime, timedelta
 
@@ -2467,8 +2606,11 @@ async def export_audit_pdf(
 @app.get("/admin/integrity/check")
 async def get_system_integrity_check(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    admin_user: dict = Depends(require_admin)
 ):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+
     # Fetch all votes and voters
     voters_result = await db.execute(select(Voter))
     voters = voters_result.scalars().all()
@@ -2527,4 +2669,72 @@ async def get_system_integrity_check(
         "tampered_voters": tampered_voters,
         "is_healthy": is_healthy
     }
+
+from app.routes.election_routes import router as election_router
+from app.routes.blockchain_routes import router as blockchain_router
+from app.routes.user_routes import router as user_router
+from app.routes.district_routes import router as district_router
+from app.routes.setting_routes import router as setting_router
+from app.routes.security_routes import router as security_router
+from app.routes.auditor_routes import router as auditor_router
+from app.routes.observer_routes import router as observer_router
+from app.routes.polling_routes import router as polling_router
+from app.routes.role_routes import router as role_router
+from app.routes.support_routes import router as support_router
+from app.routes.commissioner_routes import router as commissioner_router
+from app.routes.superadmin_routes import router as superadmin_router
+from app.routes.voter_routes import router as voter_router
+from app.routes.verify_routes import router as verify_router
+from app.routes.polling_station_routes import router as polling_station_router
+
+app.include_router(election_router, dependencies=[Depends(require_admin)])
+app.include_router(blockchain_router, dependencies=[Depends(require_admin)])
+app.include_router(user_router, dependencies=[Depends(require_admin)])
+app.include_router(district_router, dependencies=[Depends(require_admin)])
+app.include_router(setting_router, dependencies=[Depends(require_admin)])
+app.include_router(security_router, dependencies=[Depends(require_admin)])
+app.include_router(auditor_router, dependencies=[Depends(require_admin)])
+app.include_router(observer_router, dependencies=[Depends(require_admin)])
+app.include_router(polling_router, dependencies=[Depends(require_admin)])
+app.include_router(role_router, dependencies=[Depends(require_admin)])
+app.include_router(support_router, dependencies=[Depends(require_admin)])
+app.include_router(commissioner_router, dependencies=[Depends(require_admin)])
+app.include_router(superadmin_router, dependencies=[Depends(require_admin)])
+app.include_router(voter_router, dependencies=[Depends(require_admin)])
+app.include_router(verify_router, dependencies=[Depends(require_admin)])
+app.include_router(polling_station_router, dependencies=[Depends(require_admin)])
+
+
+# =====================================
+# ADMIN — SECURITY BLOCKCHAIN
+# GET /admin/security/blockchain
+# =====================================
+
+@app.get("/admin/security/blockchain")
+async def get_admin_security_blockchain(
+    db: AsyncSession = Depends(get_db),
+    admin_user: dict = Depends(require_admin)
+):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+    from app.services.blockchain_service import get_all_blocks
+    blocks = await get_all_blocks(db)
+    return {"success": True, "blocks": blocks}
+
+
+# =====================================
+# ADMIN — SECURITY SYNC LOGS
+# GET /admin/security/sync-logs
+# =====================================
+
+@app.get("/admin/security/sync-logs")
+async def get_admin_security_sync_logs(
+    db: AsyncSession = Depends(get_db),
+    admin_user: dict = Depends(require_admin)
+):
+    if admin_user.get("role_name") == "election_commissioner":
+        raise HTTPException(status_code=403, detail="Election Commissioner role is forbidden from this resource.")
+    from app.services.district_sync_service import get_all_sync_logs
+    logs = await get_all_sync_logs(db)
+    return {"success": True, "logs": logs}
 

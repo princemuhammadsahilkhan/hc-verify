@@ -1,0 +1,35 @@
+════════
+Verification Code: 7843-9216-5527
+
+VOTER CHECKS ONLINE:
+"Your vote for ADV. IMRAN KHAN was recorded"
+
+VOTER SHOWS CANDIDATE:
+"See, I voted for you!"
+
+PROBLEM FOR CANDIDATE:
+═══════════════════════════════════════════
+The verification portal shows:
+✓ Vote recorded
+✓ Candidate name
+✗ NO VOTER IDENTITY
+
+CANDIDATE ASKS: "How do I know this is YOUR verification code?"
+VOTER: "Because I'm showing you"
+CANDIDATE: "But you could have taken any receipt from the trash"
+
+RESULT: Verification code is NOT proof of how anyone voted
+Vote buying becomes impossible to enforce
+
+Attack 3: "The Inside Job" - Colluding Officer
+Scenario: Polling officer adds 100 fake votes for his favorite candidate
+Why Your System Detects It:
+text
+DIGITAL FORENSICS:
+═══════════════════════════════════════════
+
+TIMESTAMP ANALYSIS:
+14:35:22 - Vote #1247 (Norm
+<truncated 200147 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.

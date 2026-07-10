@@ -1,0 +1,41 @@
+      {tab === "Votes" && (
+        <div className="card admin-panel" style={{ marginTop: 16 }}>
+          <div className="card-header">
+            <div>
+              <h2 className="card-title"><VoteIcon size={16} /> Vote ledger</h2>
+              <p className="card-subtitle">Loaded from GET /public/votes. Records found: {voteRecords.length}</p>
+            <button className="button" style={{ fontSize: 12 }} onClick={loadVotes}><RefreshCw size={13} /> Refresh</button>
+          {votesLoading ? (
+            <div className="results-loading">
+              <div className="loading-bar" />
+              <div className="loading-bar" />
+          ) : voteRecords.length === 0 ? (
+            <div className="empty-state" style={{ marginTop: 16 }}>
+              <div className="empty-icon">VOTE</div>
+              <h3>No votes found</h3>
+              <p>The vote ledger endpoint returned no rows.</p>
+            </div>
+          ) : (
+            <div className="results-list" style={{ marginTop: 18 }}>
+              <div className="result-head">
+                <span>Receipt</span>
+                <span>Timestamp</span>
+                <span>Status</span>
+              </div>
+              {voteRecords.map((vote, index) => (
+                <div key={`${vote.receipt_id}-${index}`} className="result-item">
+                  <div className="result-left">
+                    <div className="candidate-symbol">V</div>
+                    <div>
+                      <strong>{vote.receipt_id || "-"}</strong>
+                      <div className="helper-text">Public vote ledger record</div>
+                    </div>
+                  </div>
+                  <div>{vote.timestamp || "-"}</div>
+                  <div className="result-right">
+                    <span className={`status-badge ${vote.status === "Verified" ? "success" : "neutral"}`}>
+                      {vote.status || "Unknown"}
+                    </span>
+          )}
+      )}
+      {/* ΓöÇΓöÇ MISSING TABS PLACEHOLDERS ΓöÇΓöÇ */}

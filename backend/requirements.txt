@@ -22,3 +22,4 @@ passlib==1.7.4
 python-jose==3.3.0
 mediapipe==0.10.11
 opencv-python-headless==4.9.0.80
+bcrypt==5.0.0

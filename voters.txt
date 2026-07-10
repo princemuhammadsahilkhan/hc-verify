@@ -1,0 +1,30 @@
+      {tab === "Voters" && (
+        <div className="card admin-panel" style={{ marginTop: 16 }}>
+          <div className="card-header">
+            <div>
+              <h2 className="card-title"><Users size={16} /> Voter registry</h2>
+              <p className="card-subtitle">Loaded from GET /admin/voters. Records found: {allVoters.length}</p>
+            <button className="button" style={{ fontSize: 12 }} onClick={loadAllVoters}><RefreshCw size={13} /> Refresh</button>
+          {allVoters.length === 0 ? (
+            <div className="empty-state" style={{ marginTop: 16 }}>
+              <div className="empty-icon">VTR</div>
+              <h3>No voters found</h3>
+              <p>The database query returned no voter rows.</p>
+          ) : (
+            <div className="admin-list">
+              {allVoters.map((voter) => (
+                <div key={voter.voter_id} className="admin-row" style={{ flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ minWidth: 220, flex: 1 }}>
+                    <strong>{voter.full_name}</strong>
+                    <div className="helper-text">{voter.voter_id} | CNIC: {voter.cnic}</div>
+                  <span>{voter.constituency || "-"}</span>
+                  <span className={`admin-pill ${voter.has_voted ? "success" : "neutral"}`}>
+                    {voter.has_voted ? "Voted" : "Not voted"}
+                  </span>
+                  <span className={`admin-pill ${voter.is_pending ? "warning" : "success"}`}>
+                    {voter.is_pending ? "Pending" : "Clear"}
+                  </span>
+              ))}
+            </div>
+          )}
+        </div>

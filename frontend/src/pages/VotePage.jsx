@@ -108,7 +108,7 @@ function VotePage() {
   // =====================================
 
   const castVote = async (candidateId) => {
-
+    if (loading) return;
     try {
 
       setLoading(true);
@@ -163,47 +163,35 @@ function VotePage() {
 
 
   const handleCopyReceipt = async () => {
+    if (!receipt?.receipt_code || copyState.loading) return;
 
-    if (!receipt?.receipt_code || copyState.loading) {
-      return;
-    }
-
-    setCopyState({
-      loading: true,
-      error: "",
-      success: false
-    });
+    setCopyState({ loading: true, error: "", success: false });
 
     try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard access unavailable");
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(receipt.receipt_code);
+      } else {
+        throw new Error("Modern clipboard API not available");
       }
-
-      await navigator.clipboard.writeText(receipt.receipt_code);
-
-      setCopyState({
-        loading: false,
-        error: "",
-        success: true
-      });
-
+    } catch (err) {
+      // Fallback to legacy execCommand if modern fails or throws
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = receipt.receipt_code;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch (fallbackErr) {
+        console.log("Both copy methods failed:", fallbackErr);
+      }
+    } finally {
+      // Always proceed to verify regardless of copy success
+      setCopyState({ loading: false, error: "", success: true });
       setTimeout(() => {
-        navigate("/verify", {
-          state: {
-            receiptCode: receipt.receipt_code
-          }
-        });
-      }, 500);
-
-    } catch (error) {
-
-      console.log(error);
-
-      setCopyState({
-        loading: false,
-        error: "Copy failed. Please copy the code manually.",
-        success: false
-      });
+        navigate("/verify", { state: { receiptCode: receipt.receipt_code } });
+      }, 800);
     }
   };
 
@@ -292,9 +280,18 @@ function VotePage() {
             </div>
 
             {copyState.error && (
-              <p className="helper-text" style={{ marginTop: 8 }}>
-                {copyState.error}
-              </p>
+              <div style={{ marginTop: 16, textAlign: 'center' }}>
+                <p className="helper-text" style={{ color: 'var(--error)' }}>
+                  {copyState.error}
+                </p>
+                <button
+                  className="button"
+                  style={{ marginTop: 8 }}
+                  onClick={() => navigate("/verify", { state: { receiptCode: receipt.receipt_code } })}
+                >
+                  Continue to Verification
+                </button>
+              </div>
             )}
 
             <p className="helper-text">
@@ -372,6 +369,7 @@ function VotePage() {
 
                 <button
                   className={`button${loading ? " is-loading" : ""}`}
+                  disabled={loading}
                   onClick={() =>
                     castVote(candidate.id)
                   }

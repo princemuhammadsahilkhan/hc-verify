@@ -9,9 +9,22 @@ function AdminLogin() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+const decodeToken = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+};
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -20,13 +33,24 @@ function AdminLogin() {
       setLoading(true);
 
       const response = await API.post("/admin/login", {
-        username,
+        email,
         password
       });
 
       localStorage.setItem("adminToken", response.data.access_token);
 
-      const destination = location.state?.from || "/admin";
+      const decoded = decodeToken(response.data.access_token);
+      const roleName = decoded?.role_name || "viewer";
+      
+      let baseRoute = "/admin";
+      if (roleName === "district_admin") baseRoute = "/district-admin";
+      else if (roleName === "polling_station_officer") baseRoute = "/polling";
+      else if (roleName === "auditor") baseRoute = "/auditor";
+      else if (roleName === "observer") baseRoute = "/observer";
+      else if (roleName === "technical_support") baseRoute = "/support";
+      else if (roleName === "voter") baseRoute = "/voter";
+
+      const destination = location.state?.from || baseRoute;
       navigate(destination, { replace: true });
 
       toast.success("Admin access granted");
@@ -59,15 +83,15 @@ function AdminLogin() {
       <div className="card form-card">
         <form className="form-grid" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Username</label>
+            <label className="form-label">Email Address</label>
             <div className="input-wrap">
               <User size={16} />
               <input
-                type="text"
+                type="email"
                 className="input"
-                placeholder="Admin username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Admin email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
                 required
               />
             </div>

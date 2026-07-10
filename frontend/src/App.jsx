@@ -12,12 +12,27 @@ import AuditLedgerPage from "./pages/AuditLedgerPage";
 import RegisterPage from "./pages/RegisterPage";
 import AuthPage from "./pages/AuthPage";
 import ProfilePage from "./pages/ProfilePage";
+import Dashboard from "./pages/Dashboard";
+import Users from "./pages/Users";
+import Roles from "./pages/Roles";
+import Districts from "./pages/Districts";
 import VotePage from "./pages/VotePage";
 import VerifyPage from "./pages/VerifyPage";
 import ResultsPage from "./pages/ResultsPage";
 import AdminPage from "./pages/AdminPage";
 import AdminLogin from "./pages/AdminLogin";
 import ProtectedRoute from "./components/ProtectedRoute";
+
+// Import role-based dashboard wrapper pages
+import SuperAdminDashboard from "./pages/superadmin/dashboard/Dashboard";
+import CommissionerDashboard from "./pages/commissioner/dashboard/Dashboard";
+import DistrictDashboard from "./pages/district/dashboard/Dashboard";
+import PollingDashboard from "./pages/polling/dashboard/Dashboard";
+import AuditorDashboard from "./pages/auditor/dashboard/Dashboard";
+import ObserverDashboard from "./pages/observer/dashboard/Dashboard";
+import SupportDashboard from "./pages/support/dashboard/Dashboard";
+import VoterDashboard from "./pages/voter/dashboard/Dashboard";
+import VerifyVote from "./pages/verify/VerifyVote";
 
 function App() {
   return (
@@ -49,10 +64,13 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/dashboard" element={<ProfilePage />} />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/admin/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+        <Route path="/admin/roles" element={<ProtectedRoute><Roles /></ProtectedRoute>} />
+        <Route path="/admin/districts" element={<ProtectedRoute><Districts /></ProtectedRoute>} />
         <Route path="/vote" element={<VotePage />} />
-        <Route path="/verify" element={<VerifyPage />} />
-        <Route path="/verify-public" element={<VerifyPage />} />
+        <Route path="/verify" element={<VerifyVote />} />
+        <Route path="/verify-public" element={<VerifyVote />} />
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route
           path="/results"
@@ -62,14 +80,17 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute>
-              <AdminPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Unified Dashboard Entry Points */}
+        <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+        <Route path="/superadmin" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
+        <Route path="/commissioner" element={<ProtectedRoute><CommissionerDashboard /></ProtectedRoute>} />
+        <Route path="/district" element={<ProtectedRoute><DistrictDashboard /></ProtectedRoute>} />
+        <Route path="/district-admin" element={<ProtectedRoute><DistrictDashboard /></ProtectedRoute>} />
+        <Route path="/polling" element={<ProtectedRoute><PollingDashboard /></ProtectedRoute>} />
+        <Route path="/auditor" element={<ProtectedRoute><AuditorDashboard /></ProtectedRoute>} />
+        <Route path="/observer" element={<ProtectedRoute><ObserverDashboard /></ProtectedRoute>} />
+        <Route path="/support" element={<ProtectedRoute><SupportDashboard /></ProtectedRoute>} />
+        <Route path="/voter" element={<ProtectedRoute><VoterDashboard /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );

@@ -24,7 +24,7 @@ function AuthPage() {
   useEffect(() => {
     const token = localStorage.getItem("voterToken");
     if (token) {
-      navigate("/profile", { replace: true });
+      navigate("/voter", { replace: true });
       return;
     }
 
@@ -67,8 +67,8 @@ function AuthPage() {
       setLoading(true);
       const response = await API.post("/auth/login", loginForm);
       localStorage.setItem("voterToken", response.data.access_token);
-      toast.success("Logged in successfully");
-      navigate("/profile");
+      toast.success("Login successful");
+      navigate("/voter");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Login failed");
     } finally {

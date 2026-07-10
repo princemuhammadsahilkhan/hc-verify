@@ -89,8 +89,6 @@ async def migrate():
                     has_voted=v.has_voted,
                     is_verified=v.is_verified,
                     face_embedding=v.face_embedding,
-                    is_pending=v.is_pending,
-                    pending_reason=v.pending_reason,
                     registration_hash=v.registration_hash,
                     created_at=v.created_at
                 )
