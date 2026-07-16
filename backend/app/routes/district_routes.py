@@ -27,16 +27,26 @@ class DistrictResponse(BaseModel):
 
 
 @router.get("/", response_model=list[DistrictResponse])
-async def get_all_districts(db: AsyncSession = Depends(get_db), admin_user: dict = Depends(require_admin)):
+async def get_all_districts(db: AsyncSession = Depends(get_db), current_admin: dict = Depends(require_admin)):
     """Return all districts from the database."""
-    if admin_user.get("role_name") == "technical_support":
+    if current_admin.get("role_name") == "technical_support":
         raise HTTPException(status_code=403, detail="Forbidden")
+        
     query = select(District).order_by(District.district_name)
-    if admin_user.get("role_name") == "district_admin":
-        if admin_user.get("district_id"):
-            query = query.where(District.district_id == admin_user.get("district_id"))
-        else:
-            return []
+    
+    grantor_level = current_admin.get("level", 10)
+    is_env_bypass = current_admin.get("is_env_bypass", False)
+    
+    if not is_env_bypass:
+        from app.models import User
+        admin_res = await db.execute(select(User).where(User.username == current_admin.get("sub")))
+        admin_user = admin_res.scalars().first()
+        if admin_user:
+            if grantor_level == 80:
+                query = query.where(District.state_id == admin_user.state_id)
+            elif grantor_level == 70:
+                query = query.where(District.district_id == admin_user.district_id)
+                
     result = await db.execute(query)
     return result.scalars().all()
 

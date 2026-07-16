@@ -8,14 +8,33 @@ from app.database import get_db
 from app.models import User, Role
 from app.schemas.user_schema import UserCreate, UserUpdate, UserResponse
 from app.utils.security import hash_password_bcrypt
+from main import require_admin
 
 router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
 
 
 @router.get("/", response_model=list[UserResponse])
-async def get_all_users(db: AsyncSession = Depends(get_db)):
-    """Get all admin users."""
-    users_res = await db.execute(select(User).order_by(User.created_at.desc()))
+async def get_all_users(
+    current_admin: dict = Depends(require_admin), 
+    db: AsyncSession = Depends(get_db)
+):
+    grantor_level = current_admin.get("level", 10)
+    is_env_bypass = current_admin.get("is_env_bypass", False)
+    
+    query = select(User).order_by(User.created_at.desc())
+    
+    if not is_env_bypass:
+        admin_res = await db.execute(select(User).where(User.username == current_admin.get("sub")))
+        admin_user = admin_res.scalars().first()
+        if admin_user:
+            if grantor_level == 80: # State Admin
+                query = query.where(User.state_id == admin_user.state_id)
+            elif grantor_level == 70: # District Admin
+                query = query.where(User.district_id == admin_user.district_id)
+            elif grantor_level == 60: # Polling Station Officer
+                query = query.where(User.user_id == admin_user.user_id)
+            
+    users_res = await db.execute(query)
     users = users_res.scalars().all()
     
     roles_res = await db.execute(select(Role))
@@ -26,7 +45,7 @@ async def get_all_users(db: AsyncSession = Depends(get_db)):
             user_id=u.user_id,
             full_name=u.full_name,
             email=u.email,
-            role=roles_map.get(u.role_id, "viewer"),
+            role=roles_map.get(u.role_id, "unknown"),
             created_at=u.created_at
         )
         for u in users

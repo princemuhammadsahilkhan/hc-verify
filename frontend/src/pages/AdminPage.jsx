@@ -283,7 +283,7 @@ function ReportsTab({ token }) {
 
   const handleExport = (type) => {
     const tkn = localStorage.getItem("adminToken");
-    fetch(`http://127.0.0.1:8000/admin/audit/export/${type}`, { headers: { Authorization: `Bearer ${tkn}` } })
+    fetch(`http://${window.location.hostname}:8000/admin/audit/export/${type}`, { headers: { Authorization: `Bearer ${tkn}` } })
       .then(r => r.blob()).then(blob => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a"); a.href = url; a.download = `report.${type}`;
@@ -432,7 +432,7 @@ function BackupRestoreTab({ token }) {
     setBackupRunning(true);
     try {
       const tkn = localStorage.getItem("adminToken");
-      const res = await fetch(`http://127.0.0.1:8000/admin/audit/export/${type}`, { headers: { Authorization: `Bearer ${tkn}` } });
+      const res = await fetch(`http://${window.location.hostname}:8000/admin/audit/export/${type}`, { headers: { Authorization: `Bearer ${tkn}` } });
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1721,7 +1721,7 @@ function AdminPage() {
               try {
                 const sev = document.getElementById("audit-export-severity")?.value || "All";
                 const token = localStorage.getItem("adminToken");
-                const url = `http://127.0.0.1:8000/admin/audit/export/${type}?filter_severity=${sev}`;
+                const url = `http://${window.location.hostname}:8000/admin/audit/export/${type}?filter_severity=${sev}`;
                 
                 const response = await fetch(url, {
                   headers: {

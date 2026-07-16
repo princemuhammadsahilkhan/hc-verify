@@ -204,28 +204,22 @@ def ensure_phase_one_schema(conn):
                 raise
 
 
-def create_admin_token(sub: str = ADMIN_USERNAME, role_name: str = "admin", permissions: list = None):
-
-    expire = datetime.utcnow() + timedelta(hours=ADMIN_TOKEN_EXPIRES_HOURS)
-
+def create_admin_token(sub, role_name, level, permissions=None, is_env_bypass=False):
     payload = {
         "sub": sub,
-        "role": role_name,
         "role_name": role_name,
+        "level": level,
         "permissions": permissions or [],
-        "exp": expire
+        "is_env_bypass": is_env_bypass,
+        "exp": datetime.utcnow() + timedelta(hours=12)
     }
-
-    return jwt.encode(
-        payload,
-        ADMIN_JWT_SECRET,
-        algorithm=ADMIN_TOKEN_ALGORITHM
-    )
+    return jwt.encode(payload, ADMIN_JWT_SECRET, algorithm=ADMIN_TOKEN_ALGORITHM)
 
 
-def require_admin(
+async def require_admin(
 
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
 
 ):
 
@@ -259,14 +253,25 @@ def require_admin(
         )
 
     role = payload.get("role_name") or payload.get("role")
-    allowed_roles = ["admin", "super_admin", "election_commissioner", "district_admin", "polling_station_officer", "observer", "technical_support", "auditor", "viewer"]
-    if not role or role not in allowed_roles:
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
-
+    level = payload.get("level")
+    
+    # Check against database for DB users
+    if not payload.get("is_env_bypass"):
+        from app.models import User, Role
+        res = await db.execute(select(User).where(User.username == payload.get("sub")))
+        user = res.scalars().first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not found")
+        
+        role_res = await db.execute(select(Role).where(Role.role_id == user.role_id))
+        role_obj = role_res.scalars().first()
+        if not role_obj or (role_obj.level is None) or role_obj.level < 10:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        
+        # update level dynamically to the real DB level
+        payload["level"] = role_obj.level
+        payload["role_name"] = role_obj.role_name
+    
     return payload
 
 
@@ -308,9 +313,20 @@ def get_current_voter(credentials: HTTPAuthorizationCredentials = Depends(securi
 # CORS
 # =====================================
 
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+for default_origin in [
+    "http://localhost",
+    "http://localhost:80",
+    "http://localhost:5173",
+    "http://127.0.0.1",
+]:
+    if default_origin not in allowed_origins:
+        allowed_origins.append(default_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -450,15 +466,20 @@ async def admin_login(credentials: AdminLoginSchema, request: Request, db: Async
     user = res.scalars().first()
 
     if user:
+        if user.password_hash == "INVITED_NO_PASSWORD":
+            raise HTTPException(status_code=400, detail="Please accept your invite first.")
+            
         if verify_password_bcrypt(credentials.password, user.password_hash):
             role_res = await db.execute(select(Role).where(Role.role_id == user.role_id))
             role_obj = role_res.scalars().first()
             role_name = role_obj.role_name if role_obj else "viewer"
+            role_level = role_obj.level if role_obj and role_obj.level else 10
 
             admin_lockout.record_success("admin")
             token = create_admin_token(
                 sub=user.username,
                 role_name=role_name,
+                level=role_level,
                 permissions=user.permissions or []
             )
             return {
@@ -472,14 +493,8 @@ async def admin_login(credentials: AdminLoginSchema, request: Request, db: Async
         and credentials.password == ADMIN_PASSWORD
     ):
         admin_lockout.record_success("admin")
-        token = create_admin_token(
-            sub=ADMIN_USERNAME,
-            role_name="admin"
-        )
-        return {
-            "access_token": token,
-            "token_type": "bearer"
-        }
+        token = create_admin_token(sub="Admin", role_name="super_admin", level=100, permissions=["all"], is_env_bypass=True)
+        return {"access_token": token, "token_type": "bearer"}
 
     admin_lockout.record_failure("admin")
     raise HTTPException(
@@ -1421,7 +1436,7 @@ async def verify_face(
     return {
         "success": False,
         "match": False,
-        "similarity": match_result["similarity"],
+        "similarity": match_result['similarity'],
         "message": "Face did not match. Your vote has been flagged for manual review."
     }
 
@@ -2675,6 +2690,7 @@ from app.routes.blockchain_routes import router as blockchain_router
 from app.routes.user_routes import router as user_router
 from app.routes.district_routes import router as district_router
 from app.routes.setting_routes import router as setting_router
+from app.routes.grant_routes import router as grant_router
 from app.routes.security_routes import router as security_router
 from app.routes.auditor_routes import router as auditor_router
 from app.routes.observer_routes import router as observer_router
@@ -2692,6 +2708,7 @@ app.include_router(blockchain_router, dependencies=[Depends(require_admin)])
 app.include_router(user_router, dependencies=[Depends(require_admin)])
 app.include_router(district_router, dependencies=[Depends(require_admin)])
 app.include_router(setting_router, dependencies=[Depends(require_admin)])
+app.include_router(grant_router)
 app.include_router(security_router, dependencies=[Depends(require_admin)])
 app.include_router(auditor_router, dependencies=[Depends(require_admin)])
 app.include_router(observer_router, dependencies=[Depends(require_admin)])

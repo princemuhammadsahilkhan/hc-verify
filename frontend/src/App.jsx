@@ -14,8 +14,8 @@ import AuthPage from "./pages/AuthPage";
 import ProfilePage from "./pages/ProfilePage";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
-import Roles from "./pages/Roles";
-import Districts from "./pages/Districts";
+
+
 import VotePage from "./pages/VotePage";
 import VerifyPage from "./pages/VerifyPage";
 import ResultsPage from "./pages/ResultsPage";
@@ -66,8 +66,8 @@ function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-        <Route path="/admin/roles" element={<ProtectedRoute><Roles /></ProtectedRoute>} />
-        <Route path="/admin/districts" element={<ProtectedRoute><Districts /></ProtectedRoute>} />
+        <Route path="/admin/roles" element={<ProtectedRoute><AdminPage defaultTab="Roles" /></ProtectedRoute>} />
+        <Route path="/admin/districts" element={<ProtectedRoute><AdminPage defaultTab="Districts" /></ProtectedRoute>} />
         <Route path="/vote" element={<VotePage />} />
         <Route path="/verify" element={<VerifyVote />} />
         <Route path="/verify-public" element={<VerifyVote />} />

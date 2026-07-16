@@ -284,6 +284,8 @@ class District(Base):
     district_id = Column(Uuid, primary_key=True, default=uuid.uuid4)
 
     district_name = Column(String(150), nullable=False)
+    
+    state_id = Column(Uuid, ForeignKey("states.state_id"), nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
@@ -385,6 +387,8 @@ class Role(Base):
     role_name = Column(String(50), unique=True, nullable=False)
 
     description = Column(Text, nullable=True)
+    
+    level = Column(Integer, nullable=True)
 
 
 class User(Base):
@@ -398,10 +402,16 @@ class User(Base):
     email = Column(String(150), unique=True, nullable=True)
 
     password_hash = Column(Text, nullable=False)
+    
+    invite_token_hash = Column(String(255), nullable=True)
+    
+    invite_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     full_name = Column(String(150), nullable=True)
 
     role_id = Column(Integer, ForeignKey("roles.role_id"), nullable=True)
+    
+    state_id = Column(Uuid, ForeignKey("states.state_id"), nullable=True)
 
     district_id = Column(Uuid, ForeignKey("districts.district_id"), nullable=True)
 
@@ -538,6 +548,26 @@ class PollingStation(Base):
     is_online = Column(Boolean, nullable=True, default=False)
     address = Column(String(500), nullable=True)
     district_id = Column(Uuid, ForeignKey("districts.district_id"), nullable=True)
-    capacity = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class State(Base):
+    __tablename__ = "states"
+
+    state_id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    state_name = Column(String(150), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RoleGrantAudit(Base):
+    __tablename__ = "role_grants_audit"
+
+    grant_id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    grantor_id = Column(Uuid, ForeignKey("users.user_id"), nullable=False)
+    grantee_id = Column(Uuid, ForeignKey("users.user_id"), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.role_id"), nullable=False)
+    jurisdiction_level = Column(String(50), nullable=False)
+    jurisdiction_id = Column(Uuid, nullable=True)
+    action = Column(String(50), nullable=False)
+    granted_at = Column(DateTime(timezone=True), server_default=func.now())
 
