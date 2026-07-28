@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 import uuid
 
@@ -59,7 +59,7 @@ class VoteSchema(BaseModel):
 
     voter_id: Optional[str] = None
 
-    candidate_id: int
+    candidate_id: Union[int, str]
 
 
 class DashboardSummaryResponse(BaseModel):

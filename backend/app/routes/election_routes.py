@@ -2,6 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 
 from app.database import get_db
 from app.models import Election
@@ -48,15 +49,22 @@ async def get_election(election_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 @router.post("/", response_model=ElectionResponse, status_code=201)
 async def create_election(payload: ElectionCreate, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Create a new election."""
+    title_clean = (payload.title or "").strip()
+    if not title_clean:
+        raise HTTPException(status_code=400, detail="Title is required")
+
+    # Check if election with this title already exists
+    existing = await db.execute(select(Election).where(func.lower(Election.title) == title_clean.lower()))
+    existing_election = existing.scalars().first()
+    if existing_election:
+        return existing_election
+
     new_election = Election(
         election_id=uuid.uuid4(),
-        title=payload.title,
+        title=title_clean,
         date=payload.date,
-        status=payload.status,
+        status=payload.status or "Upcoming",
     )
     db.add(new_election)
     await db.commit()
@@ -66,9 +74,6 @@ async def create_election(payload: ElectionCreate, db: AsyncSession = Depends(ge
 
 @router.delete("/{election_id}", status_code=204)
 async def delete_election(election_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Delete an election by UUID."""
     result = await db.execute(select(Election).where(Election.election_id == election_id))
     election = result.scalars().first()

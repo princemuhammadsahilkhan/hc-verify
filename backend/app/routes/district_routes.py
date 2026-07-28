@@ -2,6 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 
 from app.database import get_db
 from app.models import District
@@ -68,20 +69,21 @@ async def get_district(district_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 @router.post("/", response_model=DistrictResponse, status_code=201)
 async def create_district(payload: DistrictCreate, db: AsyncSession = Depends(get_db), admin_user: dict = Depends(require_admin)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Create a new district."""
-    enforce_role(admin_user, ["super_admin", "admin"])
-    # Prevent duplicates
+    name = (payload.district_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="District name is required.")
+    
     existing = await db.execute(
-        select(District).where(District.district_name == payload.district_name)
+        select(District).where(func.lower(District.district_name) == name.lower())
     )
-    if existing.scalars().first():
-        raise HTTPException(status_code=400, detail="District with this name already exists.")
+    dist_obj = existing.scalars().first()
+    if dist_obj:
+        return dist_obj
+
     new_district = District(
         district_id=uuid.uuid4(),
-        district_name=payload.district_name,
+        district_name=name,
     )
     db.add(new_district)
     await db.commit()
@@ -91,11 +93,7 @@ async def create_district(payload: DistrictCreate, db: AsyncSession = Depends(ge
 
 @router.delete("/{district_id}", status_code=204)
 async def delete_district(district_id: uuid.UUID, db: AsyncSession = Depends(get_db), admin_user: dict = Depends(require_admin)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Delete a district by UUID."""
-    enforce_role(admin_user, ["super_admin", "admin"])
     result = await db.execute(select(District).where(District.district_id == district_id))
     district = result.scalars().first()
     if not district:

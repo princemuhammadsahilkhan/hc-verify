@@ -24,7 +24,20 @@ function ResultsPage() {
             Authorization: `Bearer ${token}`
           }
         });
-        setResults(resultsRes.data);
+        const list = Array.isArray(resultsRes.data) ? resultsRes.data : (resultsRes.data?.records || resultsRes.data?.candidates || resultsRes.data?.items || []);
+        const mapped = list.map(c => ({
+          ...c,
+          id: c.id || c.candidate_id || c._id,
+          candidate_id: c.candidate_id || c.id,
+          name: c.name || c.full_name || c.candidate_name || c.title || "",
+          full_name: c.full_name || c.name || c.candidate_name || c.title || "",
+          party: c.party || c.party_name || "",
+          party_name: c.party_name || c.party || "",
+          symbol: c.symbol || c.symbol_name || "",
+          symbol_name: c.symbol_name || c.symbol || "",
+          votes: typeof c.votes === 'number' ? c.votes : (parseInt(c.votes) || 0)
+        }));
+        setResults(mapped);
       } catch (error) {
         if ([401, 403].includes(error.response?.status)) {
           localStorage.removeItem("adminToken");

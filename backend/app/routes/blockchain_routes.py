@@ -38,9 +38,6 @@ async def get_all_nodes(db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=BlockchainNodeResponse, status_code=201)
 async def create_node(payload: BlockchainNodeCreate, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Create a new blockchain node."""
     new_node = BlockchainNode(
         node_id=uuid.uuid4(),
@@ -56,9 +53,6 @@ async def create_node(payload: BlockchainNodeCreate, db: AsyncSession = Depends(
 
 @router.delete("/{node_id}", status_code=204)
 async def delete_node(node_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Delete a blockchain node by UUID."""
     result = await db.execute(select(BlockchainNode).where(BlockchainNode.node_id == node_id))
     node = result.scalars().first()

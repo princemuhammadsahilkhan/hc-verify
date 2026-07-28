@@ -38,9 +38,6 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=SystemSettingResponse, status_code=201)
 async def create_setting(payload: SystemSettingCreate, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
     """Create a new system setting."""
     existing = await db.execute(
         select(SystemSetting).where(SystemSetting.setting_key == payload.setting_key)
@@ -65,10 +62,22 @@ class SystemSettingUpdate(BaseModel):
 
 
 @router.put("/{setting_id}", response_model=SystemSettingResponse)
-async def update_setting(setting_id: uuid.UUID, payload: SystemSettingUpdate, db: AsyncSession = Depends(get_db)):
+async def update_setting(setting_id: str, payload: SystemSettingUpdate, db: AsyncSession = Depends(get_db)):
     """Update an existing system setting."""
-    result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id == setting_id))
+    result = await db.execute(select(SystemSetting).where(SystemSetting.setting_key == str(setting_id)))
     setting = result.scalars().first()
+    if not setting:
+        try:
+            val_int = uuid.UUID(str(setting_id)).int & 0xFFFFFFFF
+            result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id_int == val_int))
+            setting = result.scalars().first()
+        except Exception:
+            try:
+                val_int = int(setting_id)
+                result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id_int == val_int))
+                setting = result.scalars().first()
+            except Exception:
+                pass
     if not setting:
         raise HTTPException(status_code=404, detail="Setting not found.")
     setting.setting_value = payload.setting_value

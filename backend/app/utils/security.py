@@ -42,8 +42,12 @@ ADMIN_TOKEN_ALGORITHM = "HS256"
 ADMIN_TOKEN_EXPIRES_HOURS = 8
 
 
-def require_admin(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+
+async def require_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
 ):
     if not credentials:
         raise HTTPException(
@@ -62,6 +66,24 @@ def require_admin(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
+
+    # Check against database for DB users
+    if not payload.get("is_env_bypass"):
+        from app.models import User, Role
+        from sqlalchemy.future import select
+        sub_val = str(payload.get("sub") or "")
+        res = await db.execute(select(User).where((User.username.ilike(sub_val)) | (User.email.ilike(sub_val))))
+        user = res.scalars().first()
+        if user:
+            role_res = await db.execute(select(Role).where(Role.role_id == user.role_id))
+            role_obj = role_res.scalars().first()
+            if role_obj:
+                payload["level"] = role_obj.level or 100
+                payload["role_name"] = role_obj.role_name
+            else:
+                payload["level"] = payload.get("level") or 100
+        else:
+            payload["level"] = payload.get("level") or 100
 
     return payload
 

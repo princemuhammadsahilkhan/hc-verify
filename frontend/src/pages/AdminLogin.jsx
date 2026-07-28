@@ -33,7 +33,8 @@ const decodeToken = (token) => {
       setLoading(true);
 
       const response = await API.post("/admin/login", {
-        email,
+        username: email,
+        email: email,
         password
       });
 
@@ -66,8 +67,8 @@ const decodeToken = (token) => {
   };
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="page" style={{ padding: "40px 20px", minHeight: "80vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <div className="page-header" style={{ textAlign: "center", marginBottom: 24 }}>
         <div className="eyebrow">
           <ShieldCheck size={16} />
           Admin access
@@ -83,13 +84,13 @@ const decodeToken = (token) => {
       <div className="card form-card">
         <form className="form-grid" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Email Address</label>
+            <label className="form-label">Username or Email Address</label>
             <div className="input-wrap">
               <User size={16} />
               <input
-                type="email"
+                type="text"
                 className="input"
-                placeholder="Admin email"
+                placeholder="Admin username or email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required

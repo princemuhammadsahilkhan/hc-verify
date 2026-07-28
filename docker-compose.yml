@@ -5,12 +5,177 @@ services:
     build: ./backend
     container_name: evoting-backend
     restart: always
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  gateway:
+    build: ./enterprise/gateway
+    container_name: evoting-enterprise-gateway
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+
+  security:
+    build: ./enterprise/security
+    container_name: evoting-threshold-security
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - ADMIN_USERNAME=Admin
+      - ADMIN_PASSWORD=Admin
+    depends_on:
+      - backend
+
+  health-probe:
+    build: ./enterprise/monitoring
+    container_name: evoting-health-probe
+    restart: always
+    expose:
+      - "8002"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: evoting-prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./enterprise/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - health-probe
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: evoting-grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  ledger-sync:
+    build: ./enterprise/ledger-sync
+    container_name: evoting-ledger-sync
+    restart: always
+    volumes:
+      - ./backend:/app/data:ro
+      - enterprise_ledger:/app/ledger
+    depends_on:
+      - backend
+
+  blockchain-trust:
+    build: ./enterprise/blockchain-trust
+    container_name: evoting-blockchain-trust
+    restart: always
+    ports:
+      - "8003:8003"
+    volumes:
+      - enterprise_ledger:/app/ledger:ro
+    depends_on:
+      - ledger-sync
+
+  proof-engine:
+    build: ./enterprise/proof-engine
+    container_name: evoting-proof-engine
+    restart: always
+    ports:
+      - "8004:8004"
+    environment:
+      - TRUST_ENGINE_URL=http://blockchain-trust:8003
+    depends_on:
+      - blockchain-trust
+
+  advanced-verification:
+    build: ./enterprise/advanced-verification
+    container_name: evoting-advanced-verification
+    restart: always
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./backend:/app/data:ro
+      - enterprise_ledger:/app/ledger:ro
+    environment:
+      - TRUST_ENGINE_URL=http://blockchain-trust:8003
+    depends_on:
+      - blockchain-trust
+
+  compliance-audit:
+    build: ./enterprise/compliance-audit
+    container_name: evoting-compliance-audit
+    restart: always
+    volumes:
+      - ./backend:/app/data:ro
+      - enterprise_ledger:/app/ledger:ro
+      - enterprise_audit:/app/audit
+    depends_on:
+      - ledger-sync
+
+  public-portal:
+    build: ./enterprise/public-portal
+    container_name: evoting-public-portal
+    restart: always
+    ports:
+      - "8006:8006"
+    volumes:
+      - enterprise_ledger:/app/ledger:ro
+    depends_on:
+      - ledger-sync
+
+  enterprise-analytics:
+    build: ./enterprise/enterprise-analytics
+    container_name: evoting-enterprise-analytics
+    restart: always
+    ports:
+      - "8007:8007"
+    volumes:
+      - enterprise_ledger:/app/ledger:ro
+    depends_on:
+      - ledger-sync
+
+  data-export:
+    build: ./enterprise/data-export
+    container_name: evoting-data-export
+    restart: always
+    ports:
+      - "8008:8008"
+    volumes:
+      - enterprise_ledger:/app/ledger:ro
+    depends_on:
+      - ledger-sync
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: evoting-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  event-publisher:
+    build: ./enterprise/event-publisher
+    container_name: evoting-event-publisher
+    restart: always
+    volumes:
+      - enterprise_ledger:/app/ledger:ro
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+      - ledger-sync
 
   frontend:
     build: ./frontend
@@ -20,3 +185,7 @@ services:
       - "80:80"
     depends_on:
       - backend
+
+volumes:
+  enterprise_ledger:
+  enterprise_audit:

@@ -10,8 +10,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models import User, Role, RoleGrantAudit, State, District, PollingStation
-from app.utils.security import hash_password_bcrypt
-from main import require_admin
+from app.utils.security import hash_password_bcrypt, require_admin
 
 router = APIRouter(prefix="/admin/grants", tags=["Role Grants"])
 

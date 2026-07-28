@@ -72,6 +72,7 @@ function App() {
         <Route path="/verify" element={<VerifyVote />} />
         <Route path="/verify-public" element={<VerifyVote />} />
         <Route path="/admin-login" element={<AdminLogin />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
         <Route
           path="/results"
           element={

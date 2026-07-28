@@ -2,6 +2,7 @@ import uuid as uuid_lib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -41,12 +42,21 @@ async def get_polling_stations(db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=PollingStationResponse, status_code=201)
 async def create_polling_station(payload: PollingStationCreate, db: AsyncSession = Depends(get_db)):
     """Create a new polling station."""
+    name_clean = (payload.station_name or "").strip()
+    if not name_clean:
+        raise HTTPException(status_code=400, detail="Station name is required.")
+
+    existing = await db.execute(select(PollingStation).where(func.lower(PollingStation.station_name) == name_clean.lower()))
+    existing_st = existing.scalars().first()
+    if existing_st:
+        return existing_st
+
     district_uuid = None
-    if payload.district_id:
+    if payload.district_id and str(payload.district_id).strip():
         try:
-            district_uuid = uuid_lib.UUID(payload.district_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid district_id format.")
+            district_uuid = uuid_lib.UUID(str(payload.district_id).strip())
+        except Exception:
+            pass
 
     import random
     import string
@@ -54,9 +64,10 @@ async def create_polling_station(payload: PollingStationCreate, db: AsyncSession
     station_code = f"ST-{random_suffix}"
 
     station = PollingStation(
-        station_name=payload.station_name,
+        station_id=uuid_lib.uuid4(),
+        station_name=name_clean,
         station_code=station_code,
-        address=payload.address,
+        address=payload.address or "",
         district_id=district_uuid,
         capacity=payload.capacity
     )

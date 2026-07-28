@@ -12,14 +12,22 @@ from app.services.district_sync_service import sync_block
 
 logger = logging.getLogger(__name__)
 
-async def generate_vote_receipt(db: AsyncSession, vote_id: int, election_id: uuid.UUID = None, district: str = None, polling_station: str = None):
+async def generate_vote_receipt(db: AsyncSession, vote_id: uuid.UUID | str, election_id: uuid.UUID = None, district: str = None, polling_station: str = None):
     try:
+        if isinstance(vote_id, str):
+            try:
+                v_uuid = uuid.UUID(vote_id)
+            except ValueError:
+                v_uuid = vote_id
+        else:
+            v_uuid = vote_id
+
         # Generate a random 12 character verification code (alphanumeric)
         verification_code = 'VC-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
 
         receipt = VoteReceipt(
             receipt_id=uuid.uuid4(),
-            vote_id=vote_id,
+            vote_id=v_uuid,
             election_id=election_id,
             timestamp=datetime.utcnow(),
             polling_station=polling_station,

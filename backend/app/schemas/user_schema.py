@@ -9,6 +9,7 @@ class UserCreate(BaseModel):
     full_name: str
     email: str
     role: str = "viewer"
+    password: Optional[str] = None
 
 
 class UserUpdate(BaseModel):

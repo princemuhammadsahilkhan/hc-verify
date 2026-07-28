@@ -101,55 +101,20 @@ class Voter(Base):
     def constituency(self, value):
         self.qr_hash = value
 
-    @hybrid_property
-    def is_verified(self):
-        return True
-
-    @is_verified.setter
-    def is_verified(self, value):
-        pass
-
-    @is_verified.expression
-    def is_verified(cls):
-        from sqlalchemy import literal
-        return literal(True)
-
-    @hybrid_property
-    def is_pending(self):
-        return False
-
-    @is_pending.setter
-    def is_pending(self, value):
-        pass
-
-    @is_pending.expression
-    def is_pending(cls):
-        from sqlalchemy import literal
-        return literal(False)
-
-    @property
-    def pending_reason(self):
-        return None
-
-    @pending_reason.setter
-    def pending_reason(self, value):
-        pass
-
-    @property
-    def face_embedding(self):
-        return None
-
-    @face_embedding.setter
-    def face_embedding(self, value):
-        pass
+    # Real DB Columns
+    is_verified = Column('is_verified', Boolean, default=True)
+    is_pending = Column('is_pending', Boolean, default=False)
+    pending_reason = Column('pending_reason', String, nullable=True)
+    face_embedding = Column('face_embedding', Text, nullable=True)
+    registration_hash_col = Column('registration_hash', String, nullable=True)
 
     @property
     def registration_hash(self):
-        return self.qr_hash or ""
+        return self.registration_hash_col or self.qr_hash or ""
 
     @registration_hash.setter
     def registration_hash(self, value):
-        self.qr_hash = value
+        self.registration_hash_col = value
 
 
 class Candidate(Base):
@@ -243,10 +208,10 @@ class Vote(Base):
 
     # Synonym/Adapter mapping for legacy code
     voter_id = synonym('ballot_id')
-    candidate_id = synonym('station_id')
+    candidate_id = synonym('encrypted_vote')
     receipt_code = synonym('verification_hash')
     vote_hash = synonym('machine_signature')
-    blockchain_hash = synonym('encrypted_vote')
+    blockchain_hash = synonym('machine_signature')
     timestamp = synonym('created_at')
 
 
@@ -549,6 +514,14 @@ class PollingStation(Base):
     address = Column(String(500), nullable=True)
     district_id = Column(Uuid, ForeignKey("districts.district_id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def capacity(self):
+        return self.machine_count or 0
+
+    @capacity.setter
+    def capacity(self, value):
+        self.machine_count = value
 
 
 class State(Base):

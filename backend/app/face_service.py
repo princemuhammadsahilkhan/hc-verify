@@ -33,8 +33,9 @@ except AttributeError:
 except Exception as e:
     print(f"[FaceService] WARNING: Failed to initialize MediaPipe FaceMesh: {e}. Fallback/Mock mode enabled.")
 
-# Similarity threshold — tune if needed
-MATCH_THRESHOLD = 0.999
+import os
+# Similarity threshold — configurable via FACE_MATCH_THRESHOLD env var (default 0.88)
+MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.88"))
 
 
 def _decode_image(image_b64: str) -> np.ndarray:

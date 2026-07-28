@@ -11,8 +11,14 @@ logger = logging.getLogger(__name__)
 
 SIMULATED_DISTRICTS = ["District A", "District B", "District C", "District D"]
 
+from datetime import datetime, timezone
+
 def _hash_sync(district: str, block_index: int, block_hash: str, timestamp: datetime) -> str:
-    t_str = timestamp.astimezone().replace(tzinfo=None).isoformat() if timestamp.tzinfo else timestamp.isoformat()
+    if timestamp.tzinfo is not None:
+        t_utc = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        t_utc = timestamp
+    t_str = t_utc.isoformat()
     payload = f"{district}|{block_index}|{block_hash}|{t_str}"
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 

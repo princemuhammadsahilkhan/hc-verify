@@ -9,9 +9,14 @@ from app.models import BlockchainTransaction
 
 logger = logging.getLogger(__name__)
 
+from datetime import datetime, timezone
+
 def _hash_block(block_index: int, previous_block_hash: str, receipt_hash: str, timestamp: datetime) -> str:
-    # Handle timezone differences between creation (naive) and verification (aware from DB)
-    t_str = timestamp.astimezone().replace(tzinfo=None).isoformat() if timestamp.tzinfo else timestamp.isoformat()
+    if timestamp.tzinfo is not None:
+        t_utc = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        t_utc = timestamp
+    t_str = t_utc.isoformat()
     payload = f"{block_index}|{previous_block_hash}|{receipt_hash}|{t_str}"
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 

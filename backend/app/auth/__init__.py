@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.database import get_db
 from app.models import Voter
@@ -13,12 +14,13 @@ router = APIRouter()
 
 # REGISTER API
 @router.post("/register")
-def register(voter: VoterCreate, db: Session = Depends(get_db)):
+async def register(voter: VoterCreate, db: AsyncSession = Depends(get_db)):
 
-    existing = db.query(Voter).filter(Voter.email == voter.email).first()
+    res = await db.execute(select(Voter).where((Voter.membership_type == voter.email) | (Voter.bar_number == voter.cnic)))
+    existing = res.scalars().first()
 
     if existing:
-        raise HTTPException(status_code=400, detail="Email already exists")
+        raise HTTPException(status_code=400, detail="Email or CNIC already exists")
 
     hashed = hash_password(voter.password)
 
@@ -31,16 +33,17 @@ def register(voter: VoterCreate, db: Session = Depends(get_db)):
     )
 
     db.add(new_voter)
-    db.commit()
+    await db.commit()
 
     return {"message": "User registered successfully"}
 
 
 # LOGIN API
 @router.post("/login")
-def login(user: LoginSchema, db: Session = Depends(get_db)):
+async def login(user: LoginSchema, db: AsyncSession = Depends(get_db)):
 
-    voter = db.query(Voter).filter(Voter.email == user.email).first()
+    res = await db.execute(select(Voter).where(Voter.membership_type == user.email))
+    voter = res.scalars().first()
 
     if not voter:
         raise HTTPException(status_code=400, detail="Invalid email")

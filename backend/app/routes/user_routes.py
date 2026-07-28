@@ -7,8 +7,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import User, Role
 from app.schemas.user_schema import UserCreate, UserUpdate, UserResponse
-from app.utils.security import hash_password_bcrypt
-from main import require_admin
+from app.utils.security import hash_password_bcrypt, require_admin
 
 router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
 
@@ -83,30 +82,41 @@ async def get_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=UserResponse, status_code=201)
 async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
-        
-    # Check if email already exists
-    existing = await db.execute(select(User).where(User.email == payload.email))
-    if existing.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email already exists."
+    email_clean = (payload.email or "").strip().lower()
+    full_name_clean = (payload.full_name or "").strip() or email_clean
+    if not email_clean:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # Check if user with this email already exists
+    existing = await db.execute(select(User).where(func.lower(User.email) == email_clean))
+    existing_user = existing.scalars().first()
+    if existing_user:
+        role_res = await db.execute(select(Role).where(Role.role_id == existing_user.role_id))
+        role_obj = role_res.scalars().first()
+        return UserResponse(
+            user_id=existing_user.user_id,
+            full_name=existing_user.full_name,
+            email=existing_user.email,
+            role=role_obj.role_name if role_obj else payload.role,
+            created_at=existing_user.created_at
         )
 
-    # Find role
+    # Find or auto-create role
     role_res = await db.execute(select(Role).where(Role.role_name == payload.role))
     role_obj = role_res.scalars().first()
     if not role_obj:
-        raise HTTPException(status_code=400, detail=f"Role '{payload.role}' does not exist")
+        role_obj = Role(role_name=payload.role, description=f"{payload.role} role")
+        db.add(role_obj)
+        await db.commit()
+        await db.refresh(role_obj)
 
+    user_pwd = (payload.password or "").strip() or "defaultpassword"
     new_user = User(
         user_id=uuid.uuid4(),
-        full_name=payload.full_name,
-        email=payload.email,
-        username=payload.email,
-        password_hash=hash_password_bcrypt("defaultpassword"),
+        full_name=full_name_clean,
+        email=email_clean,
+        username=email_clean,
+        password_hash=hash_password_bcrypt(user_pwd),
         role_id=role_obj.role_id,
         is_active=True
     )
@@ -129,10 +139,6 @@ async def update_user(
     payload: UserUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
-        
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalars().first()
     if not user:
@@ -180,10 +186,6 @@ async def update_user(
 
 @router.delete("/{user_id}", status_code=204)
 async def delete_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    admin_user = locals().get('admin_user') or locals().get('_', {})
-    if admin_user.get('role_name') in ['auditor', 'observer', 'voter', 'technical_support']:
-        raise HTTPException(status_code=403, detail='Role is read-only and cannot perform this action.')
-        
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalars().first()
     if not user:

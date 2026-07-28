@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ShieldCheck, Home, UserPlus, Vote, BadgeCheck, BarChart3, Settings, LogIn } from "lucide-react";
+import { ShieldCheck, Home, UserPlus, Vote, BadgeCheck, BarChart3, Settings, LogIn, Globe } from "lucide-react";
 import { useLang, LANGUAGES } from "../context/LangContext";
 
 function Navbar() {
