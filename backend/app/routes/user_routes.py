@@ -111,14 +111,20 @@ async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         await db.refresh(role_obj)
 
     user_pwd = (payload.password or "").strip() or "defaultpassword"
+    username_clean = (payload.username or "").strip().lower() or email_clean
+    # Check if username already exists
+    existing_username = await db.execute(select(User).where(func.lower(User.username) == username_clean))
+    if existing_username.scalars().first():
+        username_clean = email_clean  # fallback to email if username taken
     new_user = User(
         user_id=uuid.uuid4(),
         full_name=full_name_clean,
         email=email_clean,
-        username=email_clean,
+        username=username_clean,
         password_hash=hash_password_bcrypt(user_pwd),
         role_id=role_obj.role_id,
-        is_active=True
+        is_active=True,
+        permissions=payload.permissions or []
     )
     db.add(new_user)
     await db.commit()

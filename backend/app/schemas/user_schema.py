@@ -10,6 +10,8 @@ class UserCreate(BaseModel):
     email: str
     role: str = "viewer"
     password: Optional[str] = None
+    username: Optional[str] = None
+    permissions: Optional[list] = None
 
 
 class UserUpdate(BaseModel):

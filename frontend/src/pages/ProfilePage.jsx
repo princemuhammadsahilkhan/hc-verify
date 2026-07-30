@@ -88,7 +88,7 @@ function ProfilePage() {
       setProfile(response.data.voter);
       setForm((prev) => ({ ...prev, password: "" }));
       toast.success(response.data.message || "Profile updated");
-      navigate("/register");
+      navigate("/vote");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Failed to update profile");
     } finally {
@@ -132,7 +132,7 @@ function ProfilePage() {
           </div>
           <div>
             <p>Verification</p>
-            <h3>{profile?.is_verified ? "Verified" : "Pending"}</h3>
+            <h3>Not verified</h3>
           </div>
         </div>
         <div className="metric-card">
@@ -142,15 +142,6 @@ function ProfilePage() {
           <div>
             <p>Vote status</p>
             <h3>{profile?.has_voted ? "Voted" : "Not yet"}</h3>
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-icon">
-            <MapPin size={18} />
-          </div>
-          <div>
-            <p>District</p>
-            <h3>{profile?.district || "-"}</h3>
           </div>
         </div>
       </div>
@@ -237,11 +228,10 @@ function ProfilePage() {
             </div>
           </div>
 
-          <div className="form-actions">
-            <button className={`button${saving ? " is-loading" : ""}`} type="submit">
+          <div className="form-actions" style={{ gridColumn: "1 / -1", marginTop: "16px" }}>
+            <button className={`button${saving ? " is-loading" : ""}`} type="submit" style={{ width: "100%" }}>
               <Save size={16} /> {saving ? "Saving..." : "Save changes"}
             </button>
-            <span className="form-hint">Your session stays active after updates.</span>
           </div>
         </form>
       </div>

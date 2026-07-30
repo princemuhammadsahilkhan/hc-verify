@@ -48,6 +48,7 @@ class CandidateCreateSchema(BaseModel):
     party: str
     district: str
     symbol: Optional[str] = None
+    unique_key: Optional[str] = None
 
 class VoteSchema(BaseModel):
 

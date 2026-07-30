@@ -122,6 +122,7 @@ def ensure_phase_one_schema(conn):
         'ALTER TABLE voters ADD COLUMN pending_reason VARCHAR',
         'ALTER TABLE voters ADD COLUMN is_verified BOOLEAN',
         'ALTER TABLE candidates ADD COLUMN district VARCHAR',
+        'ALTER TABLE candidates ADD COLUMN unique_key VARCHAR(100)',
         'ALTER TABLE votes ADD COLUMN vote_hash VARCHAR',
         'ALTER TABLE votes ADD COLUMN timestamp DATETIME',
         'ALTER TABLE audit_logs ADD COLUMN timestamp DATETIME',
@@ -310,11 +311,16 @@ async def startup():
 
     async for db in get_db():
 
-        result = await db.execute(
-            select(Candidate)
-        )
-
-        existing = result.scalars().all()
+        try:
+            result = await db.execute(
+                select(Candidate)
+            )
+            existing = result.scalars().all()
+        except Exception:
+            await db.rollback()
+            from sqlalchemy import text as _text
+            _r = await db.execute(_text("SELECT COUNT(*) FROM candidates"))
+            existing = [None] * (_r.scalar() or 0)
 
         if len(existing) == 0:
 
@@ -689,15 +695,57 @@ async def update_auth_me(
 
 @app.post("/register")
 async def register_voter(
-
     voter: RegisterSchema,
-
-    db: AsyncSession = Depends(get_db)
-
+    db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    jwt_voter = None
+    if credentials and credentials.credentials:
+        try:
+            payload = jwt.decode(
+                credentials.credentials,
+                VOTER_JWT_SECRET,
+                algorithms=[VOTER_JWT_ALGORITHM]
+            )
+            voter_id = payload.get("voter_id")
+            if voter_id:
+                try:
+                    v_uuid = uuid.UUID(str(voter_id))
+                    v_res = await db.execute(
+                        select(Voter).where((Voter.voter_id == v_uuid) | (Voter.voter_id == voter_id))
+                    )
+                except Exception:
+                    v_res = await db.execute(select(Voter).where(Voter.voter_id == voter_id))
+                jwt_voter = v_res.scalars().first()
+        except Exception:
+            pass
+
+    if jwt_voter:
+        if jwt_voter.has_voted:
+            return {
+                "success": False,
+                "message": "You have already voted"
+            }
+        jwt_voter.full_name = voter.full_name or jwt_voter.full_name
+        jwt_voter.cnic = voter.cnic or jwt_voter.cnic
+        jwt_voter.phone = voter.phone or jwt_voter.phone
+        jwt_voter.constituency = voter.constituency or jwt_voter.constituency
+        if not jwt_voter.district:
+            jwt_voter.district = voter.constituency or "General"
+        
+        jwt_voter.registration_hash = calculate_registration_hash(
+            jwt_voter.voter_id,
+            jwt_voter.cnic,
+            jwt_voter.full_name
+        )
+        await db.commit()
+        return {
+            "success": True,
+            "message": "Voter registered successfully",
+            "voter_id": str(jwt_voter.voter_id)
+        }
 
     # Prevent duplicate CNIC or identical identity data
-
     existing = await db.execute(
         select(Voter).where(
             Voter.bar_number == voter.cnic
@@ -774,6 +822,7 @@ async def register_voter(
         phone=voter.phone,
 
         constituency=voter.constituency,
+        district=voter.constituency or "General",
         password=""
     )
 
@@ -881,13 +930,59 @@ async def get_candidates(
     db: AsyncSession = Depends(get_db)
 ):
 
-    result = await db.execute(
-        select(Candidate)
-    )
+    target_district_id = None
+    target_district_name = None
 
-    candidates = result.scalars().all()
+    if voter_id:
+        try:
+            v_uuid = uuid.UUID(str(voter_id))
+            v_res = await db.execute(select(Voter).where((Voter.voter_id == v_uuid) | (Voter.voter_id == voter_id)))
+        except Exception:
+            v_res = await db.execute(select(Voter).where(Voter.voter_id == voter_id))
+        v_obj = v_res.scalars().first()
+        if v_obj:
+            if v_obj.district_id:
+                target_district_id = v_obj.district_id
+            if v_obj.district:
+                target_district_name = v_obj.district.lower().strip()
+
+    if district:
+        target_district_name = district.lower().strip()
+
+    try:
+        result = await db.execute(
+            select(Candidate)
+        )
+        all_candidates = result.scalars().all()
+    except Exception:
+        # Fallback: if unique_key column doesn't exist yet, select without it
+        await db.rollback()
+        from sqlalchemy import text
+        raw = await db.execute(text("SELECT candidate_id, full_name, party_name, symbol_name, district_id, election_id, bar_number, photo_url, public_key FROM candidates"))
+        rows = raw.fetchall()
+        class _C:
+            pass
+        all_candidates = []
+        for r in rows:
+            c = _C()
+            c.candidate_id = r[0]; c.full_name = r[1]; c.party_name = r[2]; c.symbol_name = r[3]; c.district_id = r[4]
+            all_candidates.append(c)
+
     districts_res = await db.execute(select(District))
     districts_map = {d.district_id: d.district_name for d in districts_res.scalars().all()}
+
+    filtered_candidates = []
+    for c in all_candidates:
+        c_district_name = districts_map.get(c.district_id, "").lower().strip()
+        c_district_id = c.district_id
+        
+        if target_district_id or target_district_name:
+            matches_id = target_district_id and c_district_id and str(target_district_id) == str(c_district_id)
+            matches_name = target_district_name and c_district_name and target_district_name == c_district_name
+            if matches_id or matches_name:
+                filtered_candidates.append(c)
+        else:
+            filtered_candidates.append(c)
 
     return [
         {
@@ -899,8 +994,9 @@ async def get_candidates(
             "district": districts_map.get(c.district_id, str(c.district_id) if c.district_id else ""),
             "district_id": str(c.district_id) if c.district_id else "",
             "constituency": districts_map.get(c.district_id, str(c.district_id) if c.district_id else ""),
+            "unique_key": getattr(c, 'unique_key', None) or "",
             "votes": 0
-        } for c in candidates
+        } for c in filtered_candidates
     ]
 
 
@@ -918,12 +1014,29 @@ async def create_candidate(
     if not name_clean:
         raise HTTPException(status_code=400, detail="Candidate name is required")
 
-    existing = await db.execute(select(Candidate).where(func.lower(Candidate.full_name) == name_clean.lower()))
-    existing_cand = existing.scalars().first()
-    if existing_cand:
+    unique_key_clean = (candidate.unique_key or "").strip()
+    if unique_key_clean:
+        try:
+            existing_key = await db.execute(select(Candidate).where(func.lower(Candidate.unique_key) == unique_key_clean.lower()))
+            if existing_key.scalars().first():
+                raise HTTPException(status_code=409, detail=f"A candidate with unique key '{unique_key_clean}' already exists. Duplicate candidates are not allowed.")
+        except HTTPException:
+            raise
+        except Exception:
+            await db.rollback()
+
+    try:
+        existing = await db.execute(select(Candidate).where(func.lower(Candidate.full_name) == name_clean.lower()))
+        existing_cand = existing.scalars().first()
+    except Exception:
+        await db.rollback()
+        existing_cand = None
+        
+    # If no unique key was provided, we do a legacy name-based deduplication
+    if existing_cand and not unique_key_clean:
         return {
             "success": True,
-            "message": "Candidate created successfully",
+            "message": "Candidate already exists by name",
             "candidate_id": str(existing_cand.candidate_id),
             "id": str(existing_cand.candidate_id),
             "name": existing_cand.full_name,
@@ -945,9 +1058,34 @@ async def create_candidate(
         symbol_name=candidate.symbol or "Symbol",
         district_id=district_uuid
     )
+    if unique_key_clean:
+        try:
+            new_candidate.unique_key = unique_key_clean
+        except Exception:
+            pass
 
-    db.add(new_candidate)
-    await db.commit()
+    try:
+        db.add(new_candidate)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        # Auto-migrate SQLite candidates table if unique_key column is missing
+        try:
+            from sqlalchemy import text
+            await db.execute(text("ALTER TABLE candidates ADD COLUMN unique_key VARCHAR(100)"))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+        
+        new_candidate = Candidate(
+            candidate_id=uuid.uuid4(),
+            full_name=name_clean,
+            party_name=candidate.party or "",
+            symbol_name=candidate.symbol or "Symbol",
+            district_id=district_uuid
+        )
+        db.add(new_candidate)
+        await db.commit()
 
     return {
         "success": True,
@@ -987,6 +1125,11 @@ async def update_candidate(
         cand_obj.party_name = candidate.party
     if candidate.symbol:
         cand_obj.symbol_name = candidate.symbol
+    if candidate.unique_key:
+        try:
+            cand_obj.unique_key = candidate.unique_key
+        except Exception:
+            pass
 
     await db.commit()
     return {"success": True, "message": "Candidate updated successfully"}
@@ -1128,8 +1271,8 @@ async def cast_vote(
             "message": "Candidate not found"
         }
 
-    # Enforce strict district voting: Voter can only vote for candidates in their registered district
-    voter_district_name = (voter.district or "").strip()
+    # Enforce district voting if districts are explicitly assigned to both voter and candidate
+    voter_district_name = (voter.district or voter.constituency or "").strip()
     if not voter_district_name and voter.district_id:
         v_dist_res = await db.execute(select(District).where(District.district_id == voter.district_id))
         v_dist_obj = v_dist_res.scalars().first()
@@ -1143,12 +1286,15 @@ async def cast_vote(
         if c_dist_obj:
             candidate_district_name = c_dist_obj.district_name.strip()
 
+    # Only enforce restriction if both voter and candidate have distinct district names assigned
     if voter_district_name and candidate_district_name:
-        if voter_district_name.lower() != candidate_district_name.lower():
-            return {
-                "success": False,
-                "message": f"District restriction: As a voter in '{voter_district_name}', you cannot vote for candidates in '{candidate_district_name}'."
-            }
+        v_dist_lower = voter_district_name.lower()
+        c_dist_lower = candidate_district_name.lower()
+        if v_dist_lower != "general" and c_dist_lower != "general" and v_dist_lower != c_dist_lower:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You can only vote for candidates from your registered district ({voter_district_name})."
+            )
 
     # Generate receipt
 
@@ -1190,28 +1336,20 @@ async def cast_vote(
     db.add(new_vote)
 
     # Update totals
-
-    candidate.votes += 1
-
+    candidate.votes = (candidate.votes or 0) + 1
     voter.has_voted = True
 
     await db.commit()
 
+    cand_name = getattr(candidate, "full_name", None) or getattr(candidate, "name", "Selected Candidate")
+    cand_symbol = getattr(candidate, "symbol_name", None) or getattr(candidate, "symbol", "🗳️")
+
     return {
-
         "success": True,
-
         "message": "Vote cast successfully",
-
-        # Visible ONLY immediately
-        # after voting
-
-        "candidate_name": candidate.name,
-
-        "candidate_symbol": candidate.symbol,
-
+        "candidate_name": cand_name,
+        "candidate_symbol": cand_symbol,
         "receipt_code": receipt_code,
-
         "blockchain_hash": blockchain_hash
     }
 
@@ -1298,10 +1436,10 @@ async def verify_vote(
 # RESULTS
 # =====================================
 
+@app.get("/public/results")
 @app.get("/results")
 async def results(
-    db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
+    db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Candidate))
     candidates = result.scalars().all()

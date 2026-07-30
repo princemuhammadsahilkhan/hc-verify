@@ -61,23 +61,37 @@ class SystemSettingUpdate(BaseModel):
     description: Optional[str] = None
 
 
+async def _find_setting(setting_id: str, db: AsyncSession):
+    # 1. Match by setting_key first
+    result = await db.execute(select(SystemSetting).where(SystemSetting.setting_key == str(setting_id)))
+    setting = result.scalars().first()
+    if setting:
+        return setting
+    # 2. Match by UUID or integer ID
+    try:
+        val_uuid = uuid.UUID(str(setting_id))
+        val_int = val_uuid.int & 0xFFFFFFFF
+        result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id_int == val_int))
+        setting = result.scalars().first()
+        if setting:
+            return setting
+    except Exception:
+        pass
+    try:
+        val_int = int(setting_id)
+        result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id_int == val_int))
+        setting = result.scalars().first()
+        if setting:
+            return setting
+    except Exception:
+        pass
+    return None
+
+
 @router.put("/{setting_id}", response_model=SystemSettingResponse)
 async def update_setting(setting_id: str, payload: SystemSettingUpdate, db: AsyncSession = Depends(get_db)):
     """Update an existing system setting."""
-    result = await db.execute(select(SystemSetting).where(SystemSetting.setting_key == str(setting_id)))
-    setting = result.scalars().first()
-    if not setting:
-        try:
-            val_int = uuid.UUID(str(setting_id)).int & 0xFFFFFFFF
-            result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id_int == val_int))
-            setting = result.scalars().first()
-        except Exception:
-            try:
-                val_int = int(setting_id)
-                result = await db.execute(select(SystemSetting).where(SystemSetting.setting_id_int == val_int))
-                setting = result.scalars().first()
-            except Exception:
-                pass
+    setting = await _find_setting(setting_id, db)
     if not setting:
         raise HTTPException(status_code=404, detail="Setting not found.")
     setting.setting_value = payload.setting_value
@@ -85,4 +99,15 @@ async def update_setting(setting_id: str, payload: SystemSettingUpdate, db: Asyn
         setting.description = payload.description
     await db.commit()
     await db.refresh(setting)
-    return setting
+    return setting
+
+
+@router.delete("/{setting_id}", status_code=204)
+async def delete_setting(setting_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete a system setting."""
+    setting = await _find_setting(setting_id, db)
+    if not setting:
+        raise HTTPException(status_code=404, detail="Setting not found.")
+    await db.delete(setting)
+    await db.commit()
+

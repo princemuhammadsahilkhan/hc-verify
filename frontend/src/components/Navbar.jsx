@@ -11,7 +11,7 @@ function Navbar() {
       <div className="nav-inner">
         <Link to="/" className="brand">
           <span className="brand-icon"><ShieldCheck size={18} /></span>
-          <span className="brand-text">HV Verify</span>
+          <span className="brand-text">HVS-STE</span>
           <span className="brand-tag">Election Control</span>
         </Link>
 

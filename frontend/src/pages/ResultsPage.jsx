@@ -18,12 +18,9 @@ function ResultsPage() {
   useEffect(() => {
     const loadResults = async () => {
       try {
-        const token = localStorage.getItem("adminToken");
-        const resultsRes = await API.get("/results", {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
+        const token = localStorage.getItem("adminToken") || localStorage.getItem("voterToken");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const resultsRes = await API.get("/results", { headers }).catch(() => API.get("/candidates", { headers }));
         const list = Array.isArray(resultsRes.data) ? resultsRes.data : (resultsRes.data?.records || resultsRes.data?.candidates || resultsRes.data?.items || []);
         const mapped = list.map(c => ({
           ...c,
@@ -39,12 +36,7 @@ function ResultsPage() {
         }));
         setResults(mapped);
       } catch (error) {
-        if ([401, 403].includes(error.response?.status)) {
-          localStorage.removeItem("adminToken");
-          navigate("/admin-login", { replace: true });
-          return;
-        }
-        console.log(error);
+        console.error("Results load error:", error);
       } finally {
         setIsLoading(false);
       }

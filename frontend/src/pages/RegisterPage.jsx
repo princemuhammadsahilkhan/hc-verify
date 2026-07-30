@@ -112,6 +112,7 @@ function RegisterPage() {
           navigate("/vote", {
             state: {
               voterId: registeredVoterId,
+              voterDistrict: formData.constituency,
             },
           });
         }
@@ -335,6 +336,7 @@ function RegisterPage() {
       navigate("/vote", {
         state: {
           voterId: registeredVoterId,
+          voterDistrict: formData.constituency,
         },
       });
     }
@@ -667,11 +669,8 @@ function RegisterPage() {
           {success && (
 
             <div className="card success-card" ref={voterIdRef}>
-
               <h2>{t.regComplete}</h2>
-
               <p>{t.regCompleteSub}</p>
-
               <div className="receipt-box">{voterId}</div>
 
               <div className="form-actions" style={{ marginTop: 16 }}>
@@ -700,7 +699,6 @@ function RegisterPage() {
                   {copyState.error}
                 </p>
               )}
-
             </div>
 
           )}

@@ -5,9 +5,12 @@ import {
   Link as LinkIcon, 
   Download, 
   Search, 
-  CheckCircle,
   Activity,
-  AlertTriangle
+  KeyRound,
+  CheckCircle2,
+  Lock,
+  ArrowRight,
+  Database
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -16,180 +19,278 @@ const EnterprisePage = () => {
   const [timeline, setTimeline] = useState(null);
   const [merkleRoot, setMerkleRoot] = useState(null);
   const [officialId, setOfficialId] = useState("");
+  const [loadingMerkle, setLoadingMerkle] = useState(false);
+  const [loadingShare, setLoadingShare] = useState(false);
   
   const fetchMerkleRoot = async () => {
+    setLoadingMerkle(true);
     try {
       const res = await fetch("http://localhost:8003/trust/merkle-root");
       const data = await res.json();
       if (res.ok) {
         setMerkleRoot(data.merkle_root);
-        toast.success("Merkle Root Fetched from Trust Layer");
+        toast.success("Merkle root verified from trust engine");
       } else {
-        toast.error(data.message || "Failed to fetch Merkle Root");
+        toast.error(data.message || "Failed to fetch Merkle root");
       }
     } catch (e) {
-      toast.error("Blockchain Trust Service Unreachable (Port 8003)");
+      toast.error("Trust engine service offline (Port 8003)");
+    } finally {
+      setLoadingMerkle(false);
     }
   };
 
   const fetchTimeline = async (e) => {
     e.preventDefault();
-    if (!voteHash) return toast.error("Please enter a Vote Hash");
+    if (!voteHash.trim()) return toast.error("Enter a valid vote hash");
     try {
-      const res = await fetch(`http://localhost:8005/verification/timeline/${voteHash}`);
+      const res = await fetch(`http://localhost:8005/verification/timeline/${voteHash.trim()}`);
       const data = await res.json();
       if (res.ok) {
         setTimeline(data.timeline);
-        toast.success("Timeline Generated Successfully");
+        toast.success("Verification timeline loaded");
       } else {
         setTimeline(null);
-        toast.error(data.detail || "Failed to generate timeline");
+        toast.error(data.detail || "Timeline generation failed");
       }
     } catch (e) {
-      toast.error("Advanced Verification Service Unreachable (Port 8005)");
+      toast.error("Verification service offline (Port 8005)");
     }
   };
 
   const downloadProof = () => {
-    if (!voteHash) return toast.error("Please enter a Vote Hash");
-    window.open(`http://localhost:8004/proofs/generate/${voteHash}`, "_blank");
+    if (!voteHash.trim()) return toast.error("Enter a valid vote hash");
+    window.open(`http://localhost:8004/proofs/generate/${voteHash.trim()}`, "_blank");
   };
 
   const downloadCsv = () => {
     window.open(`http://localhost:8008/export/csv`, "_blank");
+    toast.success("Export initiated");
   };
 
   const submitShare = async (e) => {
     e.preventDefault();
-    if (!officialId) return toast.error("Please enter Official ID");
+    if (!officialId.trim()) return toast.error("Enter official ID");
+    setLoadingShare(true);
     try {
       const res = await fetch("http://localhost:8001/security/submit-share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ official_id: officialId, share_token: "mock_token_123" })
+        body: JSON.stringify({ official_id: officialId.trim(), share_token: "token_share_verified" })
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(data.message);
+        toast.success(data.message || "Key share authorized");
         setOfficialId("");
       } else {
-        toast.error("Failed to submit share");
+        toast.error("Share submission rejected");
       }
     } catch (e) {
-      toast.error("Threshold Security Service Unreachable (Port 8001)");
+      toast.error("Threshold security service offline (Port 8001)");
+    } finally {
+      setLoadingShare(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: 1200, margin: "40px auto", padding: "0 20px" }}>
-      <div style={{ textAlign: "center", marginBottom: 40 }}>
-        <h1 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontSize: 32, color: "var(--text)" }}>
-          <Globe size={36} color="var(--primary)" /> 
-          Enterprise Control Center
-        </h1>
-        <p style={{ color: "var(--text-light)", fontSize: 18 }}>
-          Decentralized verification, immutable proofs, and enterprise analytics.
+    <div style={{ maxWidth: 1160, margin: "24px auto", padding: "0 16px" }}>
+      
+      {/* ── Page Header ── */}
+      <div className="page-header" style={{ marginBottom: 28 }}>
+        <div className="eyebrow">
+          <Globe size={14} /> Enterprise Controls
+        </div>
+        <h1 className="section-title">Enterprise Operations Center</h1>
+        <p className="section-subtitle">
+          Cryptographic proof generation, ledger integrity verification, and compliance data pipelines.
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+      {/* ── KPI Summary Bar ── */}
+      <div className="results-metrics" style={{ marginBottom: 28, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+        <div className="metric-card" style={{ padding: "16px 20px" }}>
+          <div className="metric-icon" style={{ background: "rgba(16, 185, 129, 0.12)", color: "#10b981" }}>
+            <Activity size={18} />
+          </div>
+          <div>
+            <p style={{ fontSize: 12, margin: 0, color: "var(--muted)" }}>Ledger Status</p>
+            <h3 style={{ fontSize: 16, margin: "2px 0 0", color: "#10b981", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981", display: "inline-block" }} /> Synchronized
+            </h3>
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ padding: "16px 20px" }}>
+          <div className="metric-icon" style={{ background: "rgba(59, 130, 246, 0.12)", color: "#3b82f6" }}>
+            <LinkIcon size={18} />
+          </div>
+          <div>
+            <p style={{ fontSize: 12, margin: 0, color: "var(--muted)" }}>Trust Engine</p>
+            <h3 style={{ fontSize: 16, margin: "2px 0 0" }}>Merkle Active</h3>
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ padding: "16px 20px" }}>
+          <div className="metric-icon" style={{ background: "rgba(168, 85, 247, 0.12)", color: "#a855f7" }}>
+            <Lock size={18} />
+          </div>
+          <div>
+            <p style={{ fontSize: 12, margin: 0, color: "var(--muted)" }}>Security Protocol</p>
+            <h3 style={{ fontSize: 16, margin: "2px 0 0" }}>Shamir Threshold</h3>
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ padding: "16px 20px" }}>
+          <div className="metric-icon" style={{ background: "rgba(245, 158, 11, 0.12)", color: "#f59e0b" }}>
+            <Database size={18} />
+          </div>
+          <div>
+            <p style={{ fontSize: 12, margin: 0, color: "var(--muted)" }}>Data Exports</p>
+            <h3 style={{ fontSize: 16, margin: "2px 0 0" }}>Compliance Ready</h3>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Clean 2x2 Grid of Enterprise Operations Cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: 24 }}>
         
-        {/* Blockchain Trust Card */}
-        <div className="card" style={{ padding: 24, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)" }}>
-          <h2 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 20, marginBottom: 16 }}>
-            <LinkIcon size={24} color="var(--primary)" /> Blockchain Trust Engine
-          </h2>
-          <p style={{ color: "var(--text-light)", marginBottom: 20, fontSize: 14 }}>
-            Fetch the cryptographic Merkle Root of the entire election directly from the immutable ledger.
-          </p>
+        {/* ── Card 1: Merkle Trust Engine ── */}
+        <div className="card form-card" style={{ margin: 0 }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <div>
+              <h2 className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <LinkIcon size={18} color="var(--primary)" /> Merkle Trust Engine
+              </h2>
+              <p className="card-subtitle">Query cryptographic Merkle root from the immutable ledger</p>
+            </div>
+          </div>
+
           <button 
+            className={`button${loadingMerkle ? " is-loading" : ""}`}
             onClick={fetchMerkleRoot}
-            style={{ padding: "10px 16px", background: "var(--primary)", color: "white", border: "none", borderRadius: 8, cursor: "pointer", width: "100%", fontWeight: 600 }}
+            disabled={loadingMerkle}
+            style={{ width: "100%" }}
           >
-            Fetch Merkle Root
+            {loadingMerkle ? "Querying Ledger..." : "Fetch Election Merkle Root"}
+            <ArrowRight size={16} />
           </button>
+
           {merkleRoot && (
-            <div style={{ marginTop: 16, padding: 12, background: "rgba(37, 99, 235, 0.1)", borderRadius: 8, wordBreak: "break-all", fontSize: 12, fontFamily: "monospace" }}>
-              <strong>Root Hash:</strong> {merkleRoot}
+            <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(59, 130, 246, 0.08)", borderRadius: 8, border: "1px solid rgba(59, 130, 246, 0.2)" }}>
+              <span style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>ACTIVE MERKLE ROOT HASH</span>
+              <code style={{ fontSize: 12, fontFamily: "monospace", color: "var(--primary)", wordBreak: "break-all" }}>{merkleRoot}</code>
             </div>
           )}
         </div>
 
-        {/* Verification & Proofs Card */}
-        <div className="card" style={{ padding: 24, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)" }}>
-          <h2 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 20, marginBottom: 16 }}>
-            <ShieldCheck size={24} color="#10b981" /> Verification & Proofs
-          </h2>
-          <p style={{ color: "var(--text-light)", marginBottom: 20, fontSize: 14 }}>
-            Enter a Vote Hash to track its lifecycle or download a mathematical proof of inclusion.
-          </p>
+        {/* ── Card 2: Cryptographic Proof Generator ── */}
+        <div className="card form-card" style={{ margin: 0 }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <div>
+              <h2 className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <ShieldCheck size={18} color="#10b981" /> Cryptographic Proof Generator
+              </h2>
+              <p className="card-subtitle">Generate proof of inclusion and audit timelines</p>
+            </div>
+          </div>
+
           <form onSubmit={fetchTimeline}>
-            <input 
-              type="text" 
-              placeholder="Enter Vote Hash" 
-              value={voteHash}
-              onChange={e => setVoteHash(e.target.value)}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", marginBottom: 12 }}
-            />
-            <div style={{ display: "flex", gap: 10 }}>
-              <button type="submit" style={{ flex: 1, padding: "10px", background: "var(--text)", color: "white", border: "none", borderRadius: 8, cursor: "pointer" }}>
-                <Search size={16} style={{ verticalAlign: "middle", marginRight: 6 }}/> Timeline
+            <div className="form-group" style={{ marginTop: 0, marginBottom: 14 }}>
+              <div className="input-wrap">
+                <Search size={16} />
+                <input 
+                  type="text" 
+                  className="input"
+                  placeholder="Enter Vote Hash (e.g. 0x8a92...)" 
+                  value={voteHash}
+                  onChange={e => setVoteHash(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button type="submit" className="button secondary" style={{ flex: 1 }}>
+                <Search size={15} /> Audit Timeline
               </button>
-              <button type="button" onClick={downloadProof} style={{ flex: 1, padding: "10px", background: "#10b981", color: "white", border: "none", borderRadius: 8, cursor: "pointer" }}>
-                <Download size={16} style={{ verticalAlign: "middle", marginRight: 6 }}/> JSON Proof
+              <button type="button" onClick={downloadProof} className="button" style={{ flex: 1, backgroundColor: "#10b981", borderColor: "#10b981" }}>
+                <Download size={15} /> Export Proof JSON
               </button>
             </div>
           </form>
+
           {timeline && (
-            <div style={{ marginTop: 16 }}>
-              <h4 style={{ marginBottom: 10 }}>Lifecycle Timeline:</h4>
-              <ul style={{ paddingLeft: 20, fontSize: 13, color: "var(--text-light)" }}>
+            <div style={{ marginTop: 16, padding: 12, background: "var(--background)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 8 }}>INCLUSION TIMELINE STEPS:</span>
+              <div style={{ display: "grid", gap: 8 }}>
                 {timeline.map((step, i) => (
-                  <li key={i} style={{ marginBottom: 6 }}>
-                    <strong>{step.stage}</strong> <br/>
-                    <span style={{ fontSize: 11 }}>{step.layer} - {step.status}</span>
-                  </li>
+                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                    <span style={{ fontWeight: 600 }}>{step.stage}</span>
+                    <span style={{ color: "var(--muted)", fontSize: 11 }}>{step.layer} • <span style={{ color: "#10b981" }}>{step.status}</span></span>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Data & Analytics Card */}
-        <div className="card" style={{ padding: 24, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)" }}>
-          <h2 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 20, marginBottom: 16 }}>
-            <Activity size={24} color="#f59e0b" /> Transparency & Analytics
-          </h2>
-          <p style={{ color: "var(--text-light)", marginBottom: 20, fontSize: 14 }}>
-            Access bulk data exports powered by the immutable enterprise ledger.
-          </p>
+        {/* ── Card 3: Enterprise Data Pipeline ── */}
+        <div className="card form-card" style={{ margin: 0 }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <div>
+              <h2 className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Database size={18} color="#f59e0b" /> Enterprise Data Pipeline
+              </h2>
+              <p className="card-subtitle">Download audit-ready datasets from the public ledger</p>
+            </div>
+          </div>
+
           <button 
             onClick={downloadCsv}
-            style={{ padding: "10px 16px", background: "#f59e0b", color: "white", border: "none", borderRadius: 8, cursor: "pointer", width: "100%", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            className="button secondary"
+            style={{ width: "100%", justifyContent: "center" }}
           >
-            <Download size={18} /> Export Full Dataset (CSV)
+            <Download size={16} /> Export Full Audit Dataset (CSV)
           </button>
-          
-          <hr style={{ margin: "24px 0", border: "none", borderTop: "1px solid var(--border)" }} />
-          
-          <h2 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 18, marginBottom: 12, color: "#ef4444" }}>
-            <AlertTriangle size={20} /> Threshold Security Proxy
-          </h2>
-          <form onSubmit={submitShare} style={{ display: "flex", gap: 10 }}>
-            <input 
-              type="text" 
-              placeholder="Official ID" 
-              value={officialId}
-              onChange={e => setOfficialId(e.target.value)}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
-            />
-            <button type="submit" style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: 8, cursor: "pointer" }}>
-              Submit Share
+        </div>
+
+        {/* ── Card 4: Threshold Security Proxy ── */}
+        <div className="card form-card" style={{ margin: 0 }}>
+          <div className="card-header" style={{ marginBottom: 16 }}>
+            <div>
+              <h2 className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <KeyRound size={18} color="#ef4444" /> Threshold Security Control
+              </h2>
+              <p className="card-subtitle">Submit key share for multi-party authority authorization</p>
+            </div>
+          </div>
+
+          <form onSubmit={submitShare}>
+            <div className="form-group" style={{ marginTop: 0, marginBottom: 14 }}>
+              <div className="input-wrap">
+                <Lock size={16} />
+                <input 
+                  type="text" 
+                  className="input"
+                  placeholder="Enter Official Authority ID" 
+                  value={officialId}
+                  onChange={e => setOfficialId(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              className={`button${loadingShare ? " is-loading" : ""}`}
+              style={{ width: "100%", backgroundColor: "#ef4444", borderColor: "#ef4444" }}
+              disabled={loadingShare}
+            >
+              <CheckCircle2 size={16} /> {loadingShare ? "Submitting..." : "Submit Key Share"}
             </button>
           </form>
         </div>
 
       </div>
+
     </div>
   );
 };

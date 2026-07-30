@@ -98,5 +98,13 @@ async def delete_district(district_id: uuid.UUID, db: AsyncSession = Depends(get
     district = result.scalars().first()
     if not district:
         raise HTTPException(status_code=404, detail="District not found")
+        
+    from app.models import Candidate, Voter, User, PollingStation
+    from sqlalchemy import update
+    await db.execute(update(Candidate).where(Candidate.district_id == district_id).values(district_id=None))
+    await db.execute(update(Voter).where(Voter.district_id == district_id).values(district_id=None))
+    await db.execute(update(User).where(User.district_id == district_id).values(district_id=None))
+    await db.execute(update(PollingStation).where(PollingStation.district_id == district_id).values(district_id=None))
+    
     await db.delete(district)
     await db.commit()

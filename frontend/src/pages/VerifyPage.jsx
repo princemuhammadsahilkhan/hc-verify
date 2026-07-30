@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { BadgeCheck, ShieldCheck, Hash, Search, CheckCircle, XCircle } from "lucide-react";
+import { BadgeCheck, ShieldCheck, Search, CheckCircle, XCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 import API from "../api";
@@ -59,33 +59,20 @@ function VerifyPage() {
     }
   };
 
-
   return (
-
     <div className="page">
-
       <div className="page-header">
         <div className="eyebrow">
           <BadgeCheck size={16} />
           {t.verifyEyebrow}
         </div>
-        <h1 className="section-title">
-          {t.verifyTitle}
-        </h1>
-        <p className="section-subtitle">
-          {t.verifySubtitle}
-        </p>
+        <h1 className="section-title">{t.verifyTitle}</h1>
+        <p className="section-subtitle">{t.verifySubtitle}</p>
       </div>
 
-
       <div className="card form-card">
-
         <div className="form-group">
-
-          <label className="form-label">
-            {t.receiptCode}
-          </label>
-
+          <label className="form-label">{t.receiptCode}</label>
           <div className="input-wrap">
             <Search size={16} />
             <input
@@ -93,130 +80,94 @@ function VerifyPage() {
               className="input"
               placeholder="RCPT-XXXXXXXX"
               value={receipt}
-              onChange={(e) =>
-                setReceipt(e.target.value)
-              }
+              onChange={(e) => setReceipt(e.target.value)}
             />
           </div>
-
-          <p className="helper-text">
-            {t.receiptCodeHelper}
-          </p>
-
         </div>
-
 
         <button
           className={"button" + (loading ? " is-loading" : "")}
           onClick={verifyVote}
         >
-          {
-            loading
-              ? (
-                <>
-                  <span className="spinner" />
-                  Verifying...
-                </>
-              )
-              : t.verifyBtn
-          }
+          {loading ? (
+            <>
+              <span className="spinner" />
+              Verifying...
+            </>
+          ) : (
+            t.verifyBtn
+          )}
         </button>
 
+        {result && (
+          <div className="card result-card" style={{ marginTop: '24px' }}>
+            {result.verification_status === "VERIFIED" ? (
+              <>
+                <div className="result-header">
+                  <ShieldCheck size={18} color="green" />
+                  <h2>Vote Verified</h2>
+                </div>
 
-        {
+                <p>
+                  Your vote has been successfully recorded and its cryptographic integrity has been fully verified across all systems.
+                </p>
 
-          result && (
+                <div className="receipt-box">{receipt}</div>
 
-            <div className="card result-card" style={{ marginTop: '24px' }}>
+                <div className="result-meta" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.receipt_found ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>Paper Trail Receipt Verified</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.hash_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>Cryptographic Hash Verified</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.blockchain_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>Blockchain Ledger Verified</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.district_sync_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>District Synchronization Verified</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="result-header error">
+                  <ShieldCheck size={18} />
+                  <h2>{result.verification_status || t.receiptNotFound}</h2>
+                </div>
 
-              {
-
-                result.verification_status === "VERIFIED" ? (
-
-                  <>
-
-                    <div className="result-header">
-                      <ShieldCheck size={18} color="green" />
-                      <h2>Vote Verified</h2>
-                    </div>
-
-                    <p>
-                      Your vote has been successfully recorded and its cryptographic integrity has been fully verified across all systems.
-                    </p>
-
-                    <div className="receipt-box">
-                      {receipt}
-                    </div>
-                    
-                    <div className="result-meta" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.receipt_found ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>Paper Trail Receipt Verified</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.hash_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>Cryptographic Hash Verified</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.blockchain_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>Blockchain Ledger Verified</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.district_sync_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>District Synchronization Verified</span>
-                      </div>
-                    </div>
-
-                  </>
-
-                ) : (
-
-                  <>
-
-                    <div className="result-header error">
-                      <ShieldCheck size={18} />
-                      <h2>{result.verification_status || t.receiptNotFound}</h2>
-                    </div>
-
-                    <p>
-                      We were unable to fully verify this receipt code across all security layers.
-                    </p>
-                    
-                    <div className="result-meta" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.receipt_found ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>Paper Trail Receipt Found</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.hash_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>Cryptographic Hash Valid</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.blockchain_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>Blockchain Ledger Valid</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {result.district_sync_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
-                        <span>District Synchronization Valid</span>
-                      </div>
-                    </div>
-
-                  </>
-
-                )
-
-              }
-
-            </div>
-
-          )
-
-        }
-
+                <p>
+                  We were unable to fully verify this receipt code across all security layers.
+                </p>
+                
+                <div className="result-meta" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.receipt_found ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>Paper Trail Receipt Found</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.hash_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>Cryptographic Hash Valid</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.blockchain_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>Blockchain Ledger Valid</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {result.district_sync_valid ? <CheckCircle size={16} color="green" /> : <XCircle size={16} color="red" />}
+                    <span>District Synchronization Valid</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
-
     </div>
-
   );
 }
 

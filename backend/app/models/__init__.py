@@ -131,6 +131,7 @@ class Candidate(Base):
     symbol_name = Column(String, nullable=True)
     photo_url = Column(Text, nullable=True)
     public_key = Column(Text, nullable=True)
+    unique_key = Column(String(100), unique=True, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now()

@@ -209,20 +209,6 @@ export default function LandingPage() {
         textAlign: "center",
       }}>
 
-        {/* Eyebrow */}
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          background: "rgba(15,118,110,0.08)",
-          border: "1px solid rgba(15,118,110,0.2)",
-          borderRadius: 40, padding: "6px 16px",
-          fontSize: 12, fontWeight: 700, color: "#0f766e",
-          letterSpacing: "0.06em", textTransform: "uppercase",
-          marginBottom: 24,
-          animation: "fadeUp 0.6s ease both",
-        }}>
-          <ShieldCheck size={13} />
-          AI-Powered E-Voting System
-        </div>
 
         {/* Headline */}
         <h1 style={{
@@ -249,8 +235,6 @@ export default function LandingPage() {
           lineHeight: 1.65,
           animation: "fadeUp 0.6s 0.2s ease both",
         }}>
-          HC Verify uses face recognition, AI liveness detection, and blockchain
-          receipts to make every vote tamper-proof and verifiable.
         </p>
 
         {/* CTA buttons */}
