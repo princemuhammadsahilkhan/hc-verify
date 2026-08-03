@@ -268,6 +268,7 @@ class Election(Base):
     title = Column(String(200), nullable=False)
 
     date = Column('start_time', DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=True)
 
     status = Column(String(50), default="Upcoming")
 

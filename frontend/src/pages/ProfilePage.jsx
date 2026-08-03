@@ -88,7 +88,7 @@ function ProfilePage() {
       setProfile(response.data.voter);
       setForm((prev) => ({ ...prev, password: "" }));
       toast.success(response.data.message || "Profile updated");
-      navigate("/vote");
+      navigate("/register");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Failed to update profile");
     } finally {

@@ -1,3 +1,4 @@
+from fastapi.security import HTTPAuthorizationCredentials
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/admin/elections", tags=["Admin Elections"])
 class ElectionCreate(BaseModel):
     title: str
     date: datetime
+    end_time: Optional[datetime] = None
     status: str = "Upcoming"
 
 
@@ -23,6 +25,7 @@ class ElectionResponse(BaseModel):
     election_id: uuid.UUID
     title: str
     date: datetime
+    end_time: Optional[datetime] = None
     status: str
     created_at: Optional[datetime]
 
@@ -30,11 +33,31 @@ class ElectionResponse(BaseModel):
         from_attributes = True
 
 
+from datetime import timezone
+
+def _compute_status(election: Election) -> str:
+    now = datetime.now(timezone.utc)
+    # Ensure start_time and end_time are timezone-aware if they aren't
+    start_time = election.date if election.date.tzinfo else election.date.replace(tzinfo=timezone.utc)
+    if now < start_time:
+        return "Upcoming"
+    
+    if election.end_time:
+        end_time = election.end_time if election.end_time.tzinfo else election.end_time.replace(tzinfo=timezone.utc)
+        if now > end_time:
+            return "Closed"
+            
+    # Default to Active if past start_time and either no end_time or before end_time
+    return "Active"
+
 @router.get("/", response_model=list[ElectionResponse])
 async def get_all_elections(db: AsyncSession = Depends(get_db)):
     """Return all elections from the database."""
     result = await db.execute(select(Election).order_by(Election.created_at.desc()))
-    return result.scalars().all()
+    elections = result.scalars().all()
+    for e in elections:
+        e.status = _compute_status(e)
+    return elections
 
 
 @router.get("/{election_id}", response_model=ElectionResponse)
@@ -44,6 +67,7 @@ async def get_election(election_id: uuid.UUID, db: AsyncSession = Depends(get_db
     election = result.scalars().first()
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
+    election.status = _compute_status(election)
     return election
 
 
@@ -64,11 +88,35 @@ async def create_election(payload: ElectionCreate, db: AsyncSession = Depends(ge
         election_id=uuid.uuid4(),
         title=title_clean,
         date=payload.date,
-        status=payload.status or "Upcoming",
+        end_time=payload.end_time,
+        status="Upcoming", # Will be computed dynamically on GET
     )
-    db.add(new_election)
-    await db.commit()
+    
+    try:
+        db.add(new_election)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        # Auto-migrate SQLite elections table if end_time column is missing
+        try:
+            from sqlalchemy import text
+            await db.execute(text("ALTER TABLE elections ADD COLUMN end_time DATETIME"))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+        
+        new_election = Election(
+            election_id=uuid.uuid4(),
+            title=title_clean,
+            date=payload.date,
+            end_time=payload.end_time,
+            status="Upcoming",
+        )
+        db.add(new_election)
+        await db.commit()
+        
     await db.refresh(new_election)
+    new_election.status = _compute_status(new_election)
     return new_election
 
 

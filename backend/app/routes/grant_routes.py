@@ -1,3 +1,4 @@
+from fastapi.security import HTTPAuthorizationCredentials
 import uuid
 import secrets
 import hashlib

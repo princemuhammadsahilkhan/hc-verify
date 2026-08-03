@@ -239,45 +239,37 @@ export default function LandingPage() {
 
         {/* CTA buttons */}
         <div style={{
-          display: "flex", gap: 12, justifyContent: "center",
-          flexWrap: "wrap", marginBottom: 48,
+          display: "flex", gap: 16, justifyContent: "center",
+          flexWrap: "wrap", marginBottom: 60,
           animation: "fadeUp 0.6s 0.3s ease both",
         }}>
           <Link to="/auth" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             background: "linear-gradient(135deg, #0f766e, #0ea5a5)",
-            color: "#fff", padding: "14px 28px", borderRadius: 14,
-            fontWeight: 700, fontSize: 15, textDecoration: "none",
+            color: "#fff", padding: "16px 32px", borderRadius: 14,
+            fontWeight: 700, fontSize: 16, textDecoration: "none",
             boxShadow: "0 8px 24px rgba(15,118,110,0.3)",
-            transition: "transform 0.2s, box-shadow 0.2s",
+            transition: "all 0.25s ease",
           }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(15,118,110,0.4)"; }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(15,118,110,0.4)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(15,118,110,0.3)"; }}
           >
-            Register to vote <ArrowRight size={16} />
+            Register to vote <ArrowRight size={18} />
           </Link>
           <Link to="/vote" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
-            background: "rgba(255,255,255,0.9)",
+            background: "#fff",
             border: "1.5px solid rgba(15,23,42,0.1)",
-            color: "#0f172a", padding: "14px 28px", borderRadius: 14,
-            fontWeight: 700, fontSize: 15, textDecoration: "none",
+            color: "#0f172a", padding: "16px 32px", borderRadius: 14,
+            fontWeight: 700, fontSize: 16, textDecoration: "none",
             boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
-          }}>
+            transition: "all 0.25s ease",
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 12px 24px rgba(15,23,42,0.1)"; e.currentTarget.style.borderColor = "rgba(15,23,42,0.2)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(15,23,42,0.06)"; e.currentTarget.style.borderColor = "rgba(15,23,42,0.1)"; }}
+          >
             Cast your vote
           </Link>
-        </div>
-
-        {/* Security badges */}
-        <div style={{
-          display: "flex", gap: 10, justifyContent: "center",
-          flexWrap: "wrap",
-          animation: "fadeUp 0.6s 0.4s ease both",
-        }}>
-          <Badge icon={<Eye size={14} color="#0f766e" />} label="Face Recognition" />
-          <Badge icon={<Fingerprint size={14} color="#1d4ed8" />} label="Liveness Detection" />
-          <Badge icon={<Lock size={14} color="#7c3aed" />} label="Blockchain Receipts" />
-          <Badge icon={<Users size={14} color="#b45309" />} label="Anti-Fraud AI" />
         </div>
       </section>
 

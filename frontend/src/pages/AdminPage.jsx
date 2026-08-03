@@ -34,6 +34,10 @@ import {
   UserX, CheckCircle2, Database, Terminal, Globe, Lock, RefreshCw,
   PlusCircle, Trash2, Download, Menu, Calendar, Settings, ShieldAlert, Map, LayoutDashboard, LogOut, Edit
 } from "lucide-react";
+import AdminDashboardTab from '../components/admin/AdminDashboardTab';
+import AdminElectionsTab from '../components/admin/AdminElectionsTab';
+import AdminCandidatesTab from '../components/admin/AdminCandidatesTab';
+import AdminVotersTab from '../components/admin/AdminVotersTab';
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import API from "../services/api";
@@ -870,343 +874,7 @@ function AIAnalyticsTab({ token }) {
   );
 }
 
-function PollingStationOfficerDashboard({ setTab, stats, voters }) {
-  const stationLogs = [
-    { id: 1, action: "Voter Verified", details: "Biometric match confirmed", time: "Just now", status: "Verified" },
-    { id: 2, action: "QR Code Scanned", details: "Voter slip authenticated", time: "2 mins ago", status: "Success" },
-    { id: 3, action: "Ballot Issued", details: "Encrypted vote cast", time: "5 mins ago", status: "Completed" }
-  ];
 
-  return (
-    <div style={{ marginTop: 16 }}>
-      {/* Officer Role Banner */}
-      <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(15,118,110,0.1), rgba(13,148,136,0.05))", borderLeft: "4px solid var(--primary)" }}>
-        <div style={{ padding: "16px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--primary)" }}>
-                Polling Station Officer Command Center
-              </h2>
-              <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>
-                Dedicated Polling Station Role Dashboard • Station #101 (Active)
-              </p>
-            </div>
-            <span className="admin-pill success">Station Operational</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Station Officer Metrics */}
-      <div className="admin-grid" style={{ marginBottom: 16 }}>
-        <div className="card admin-metric">
-          <div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Users size={18} /></div>
-          <div><p>Station Registered Voters</p><h3>{voters?.length || stats?.total_voters || 0}</h3></div>
-        </div>
-        <div className="card admin-metric">
-          <div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><ShieldCheck size={18} /></div>
-          <div><p>Biometric Verified</p><h3 style={{ color: "var(--success)" }}>{voters?.length || stats?.total_voters || 0}</h3></div>
-        </div>
-        <div className="card admin-metric">
-          <div className="metric-icon" style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}><VoteIcon size={18} /></div>
-          <div><p>Votes Cast Today</p><h3 style={{ color: "#7c3aed" }}>{stats.votes_cast}</h3></div>
-        </div>
-        <div className="card admin-metric">
-          <div className="metric-icon" style={{ background: "rgba(245,158,11,0.12)", color: "var(--warning)" }}><Activity size={18} /></div>
-          <div><p>Station Turnout</p><h3 style={{ color: "var(--warning)" }}>{stats.turnout}%</h3></div>
-        </div>
-      </div>
-
-      {/* Quick Officer Station Actions */}
-      <div className="card admin-panel" style={{ marginBottom: 16 }}>
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">Quick Station Actions</h2>
-            <p className="card-subtitle">Direct shortcuts for station officer tasks</p>
-          </div>
-        </div>
-        <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-          <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Verify Voter")}>
-            <ShieldCheck size={16} /> Verify Voter
-          </button>
-          <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("QR Scanner")}>
-            <Map size={16} /> QR Scanner
-          </button>
-          <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Biometric Status")}>
-            <Users size={16} /> Biometric Status
-          </button>
-          <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#7c3aed" }} onClick={() => setTab("Cast Vote")}>
-            <VoteIcon size={16} /> Cast Vote
-          </button>
-        </div>
-      </div>
-
-      {/* Recent Activity Log */}
-      <div className="card admin-panel">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">Recent Station Check-ins</h2>
-            <p className="card-subtitle">Live events recorded at this polling station</p>
-          </div>
-        </div>
-        <div className="admin-list">
-          {stationLogs.map((log) => (
-            <div key={log.id} className="admin-row">
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <strong style={{ fontSize: 14 }}>{log.action}</strong>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>{log.details} • {log.time}</span>
-              </div>
-              <span className="admin-pill success">{log.status}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RoleBasedDashboard({ userRole, setTab, stats, voters }) {
-  const totalVoters = (stats?.total_voters && Number(stats.total_voters) >= 100) ? stats.total_voters : (voters?.length && voters.length >= 100 ? voters.length : 168);
-  const votesCast = (stats?.votes_cast && Number(stats.votes_cast) > 0) ? stats.votes_cast : 15;
-  const turnoutRate = (stats?.turnout && Number(stats.turnout) > 0) ? stats.turnout : (totalVoters > 0 ? ((votesCast / totalVoters) * 100).toFixed(1) : "8.9");
-
-  if (userRole === "super_admin") {
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(15,118,110,0.1), rgba(13,148,136,0.05))", borderLeft: "4px solid var(--primary)" }}>
-          <div style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--primary)" }}>Super Admin Global Control Center</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>Full system administration, security controls, and enterprise operations</p>
-              </div>
-              <span className="admin-pill success">System Master Access</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-grid" style={{ marginBottom: 16 }}>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Users size={18} /></div><div><p>Total Registered Voters</p><h3>{totalVoters}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><VoteIcon size={18} /></div><div><p>Total Votes Cast</p><h3 style={{ color: "var(--success)" }}>{votesCast}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}><Activity size={18} /></div><div><p>National Turnout</p><h3 style={{ color: "#7c3aed" }}>{turnoutRate}%</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(239,68,68,0.12)", color: "var(--danger)" }}><ShieldAlert size={18} /></div><div><p>Security Incidents</p><h3 style={{ color: stats?.pending > 0 ? "var(--danger)" : "inherit" }}>{stats?.pending || 0}</h3></div></div>
-        </div>
-        <div className="card admin-panel" style={{ marginBottom: 16 }}>
-          <div className="card-header"><div><h2 className="card-title">Super Admin Quick Controls</h2><p className="card-subtitle">Direct shortcuts for administrative tasks</p></div></div>
-          <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Users")}><Users size={16} /> Manage Users</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Roles")}><ShieldCheck size={16} /> Roles & Permissions</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Audit Logs")}><Terminal size={16} /> Audit Logs</button>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#7c3aed" }} onClick={() => setTab("AI Analytics")}><Activity size={16} /> System Analytics</button>
-          </div>
-        </div>
-        <div className="admin-panels">
-          <div className="card admin-panel">
-            <div className="card-header"><div><h2 className="card-title">Core Services Operational Status</h2><p className="card-subtitle">Global system infrastructure health</p></div><span className="admin-pill success">All Systems Operational</span></div>
-            <div className="admin-list">
-              {["Identity Verification Engine", "Biometric Face Recognition", "Blockchain Ballot Ledger Sync", "Security Alert Pipeline", "Database Connection Pool"].map(s => (
-                <div key={s} className="admin-row"><span>{s}</span><span className="admin-pill success">Healthy</span></div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (userRole === "auditor") {
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(124,58,237,0.1), rgba(139,92,246,0.05))", borderLeft: "4px solid #7c3aed" }}>
-          <div style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#7c3aed" }}>Independent Auditor & Compliance Portal</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>Cryptographic integrity, Merkle tree verification, and audit trails</p>
-              </div>
-              <span className="admin-pill success">Ledger Audited</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-grid" style={{ marginBottom: 16 }}>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}><Database size={18} /></div><div><p>Blockchain Blocks</p><h3 style={{ color: "#7c3aed" }}>{stats.votes_cast}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><ShieldCheck size={18} /></div><div><p>Hash Integrity</p><h3 style={{ color: "var(--success)" }}>100% Valid</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Terminal size={18} /></div><div><p>Audit Events</p><h3>{stats.votes_cast + 120}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(245,158,11,0.12)", color: "var(--warning)" }}><AlertTriangle size={18} /></div><div><p>Flagged Anomalies</p><h3>0</h3></div></div>
-        </div>
-        <div className="card admin-panel" style={{ marginBottom: 16 }}>
-          <div className="card-header"><div><h2 className="card-title">Auditor Direct Tools</h2><p className="card-subtitle">Quick access to audit verification views</p></div></div>
-          <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#7c3aed" }} onClick={() => setTab("Audit Logs")}><Terminal size={16} /> Audit Logs</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Vote Verification")}><ShieldCheck size={16} /> Vote Verification</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Merkle Tree")}><Database size={16} /> Merkle Tree</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Reports")}><Activity size={16} /> System Reports</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (userRole === "election_commissioner") {
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))", borderLeft: "4px solid var(--success)" }}>
-          <div style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--success)" }}>Election Commission Executive Portal</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>Official election oversight, candidate approvals, and voter participation</p>
-              </div>
-              <span className="admin-pill success">Elections Active</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-grid" style={{ marginBottom: 16 }}>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Calendar size={18} /></div><div><p>Active Elections</p><h3>6</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><Users size={18} /></div><div><p>Approved Candidates</p><h3>12</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}><VoteIcon size={18} /></div><div><p>Total Ballots Cast</p><h3 style={{ color: "#7c3aed" }}>{stats.votes_cast}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(245,158,11,0.12)", color: "var(--warning)" }}><Activity size={18} /></div><div><p>Turnout Rate</p><h3>{stats.turnout}%</h3></div></div>
-        </div>
-        <div className="card admin-panel" style={{ marginBottom: 16 }}>
-          <div className="card-header"><div><h2 className="card-title">Commission Shortcuts</h2><p className="card-subtitle">Manage elections, candidates, and certified reports</p></div></div>
-          <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Elections")}><Calendar size={16} /> Elections</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Candidates")}><Users size={16} /> Candidates</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Reports")}><Activity size={16} /> Export Reports</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (userRole === "district_admin") {
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.05))", borderLeft: "4px solid #2563eb" }}>
-          <div style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#2563eb" }}>District Operations Command Center</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>Local district polling stations, voter rolls, and turnout management</p>
-              </div>
-              <span className="admin-pill success">District Active</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-grid" style={{ marginBottom: 16 }}>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(37,99,235,0.12)", color: "#2563eb" }}><Map size={18} /></div><div><p>Registered Polling Stations</p><h3 style={{ color: "#2563eb" }}>8</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Users size={18} /></div><div><p>District Voters</p><h3>{voters?.length || stats?.total_voters || 0}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><VoteIcon size={18} /></div><div><p>District Votes Cast</p><h3 style={{ color: "var(--success)" }}>{stats.votes_cast}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(245,158,11,0.12)", color: "var(--warning)" }}><Activity size={18} /></div><div><p>District Turnout</p><h3>{stats.turnout}%</h3></div></div>
-        </div>
-        <div className="card admin-panel" style={{ marginBottom: 16 }}>
-          <div className="card-header"><div><h2 className="card-title">District Administration</h2><p className="card-subtitle">Manage polling stations and local voters</p></div></div>
-          <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Polling Stations")}><Map size={16} /> Polling Stations</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Voters")}><Users size={16} /> District Voters</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Reports")}><Activity size={16} /> District Reports</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (userRole === "polling_station_officer") {
-    return <PollingStationOfficerDashboard setTab={setTab} stats={stats} voters={voters} />;
-  }
-
-  if (userRole === "observer") {
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.05))", borderLeft: "4px solid var(--warning)" }}>
-          <div style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--warning)" }}>Independent Observer Transparency Portal</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>Real-time voter turnout feeds, live statistics, and public audit metrics</p>
-              </div>
-              <span className="admin-pill neutral">Public Observer</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-grid" style={{ marginBottom: 16 }}>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><VoteIcon size={18} /></div><div><p>Total Ballots Counted</p><h3 style={{ color: "var(--success)" }}>{stats.votes_cast}</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(245,158,11,0.12)", color: "var(--warning)" }}><Activity size={18} /></div><div><p>Live Turnout %</p><h3 style={{ color: "var(--warning)" }}>{stats.turnout}%</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Map size={18} /></div><div><p>Active Districts</p><h3>5</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}><Database size={18} /></div><div><p>Ledger Blocks</p><h3>{stats.votes_cast}</h3></div></div>
-        </div>
-        <div className="card admin-panel" style={{ marginBottom: 16 }}>
-          <div className="card-header"><div><h2 className="card-title">Observer Navigation</h2><p className="card-subtitle">Live analytics and election statistics</p></div></div>
-          <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Live Charts")}><Activity size={16} /> Live Charts</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Turnout")}><VoteIcon size={16} /> Turnout Feed</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Blockchain Status")}><Database size={16} /> Blockchain Status</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (userRole === "technical_support") {
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div className="card admin-panel" style={{ marginBottom: 16, background: "linear-gradient(135deg, rgba(14,165,233,0.1), rgba(2,132,199,0.05))", borderLeft: "4px solid #0284c7" }}>
-          <div style={{ padding: "16px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#0284c7" }}>Technical Infrastructure & System Support</h2>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>Node cluster health, API diagnostics, database performance, and hardware logs</p>
-              </div>
-              <span className="admin-pill success">All Nodes Synced</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-grid" style={{ marginBottom: 16 }}>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(2,132,199,0.12)", color: "#0284c7" }}><Database size={18} /></div><div><p>Node Sync Status</p><h3 style={{ color: "#0284c7" }}>100% Synced</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(16,185,129,0.12)", color: "var(--success)" }}><Activity size={18} /></div><div><p>Average API Latency</p><h3 style={{ color: "var(--success)" }}>12 ms</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}><Users size={18} /></div><div><p>Active Node Cluster</p><h3>4 Nodes</h3></div></div>
-          <div className="card admin-metric"><div className="metric-icon" style={{ background: "rgba(15,118,110,0.12)", color: "var(--primary)" }}><Terminal size={18} /></div><div><p>Uptime</p><h3>99.9%</h3></div></div>
-        </div>
-        <div className="card admin-panel" style={{ marginBottom: 16 }}>
-          <div className="card-header"><div><h2 className="card-title">Technical Support Diagnostics</h2><p className="card-subtitle">Infrastructure inspection and logs</p></div></div>
-          <div style={{ padding: "0 24px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <button className="button primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Node Status")}><Database size={16} /> Node Status</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("Server Health")}><Activity size={16} /> Server Health</button>
-            <button className="button secondary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setTab("System Logs")}><Terminal size={16} /> System Logs</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Fallback default Admin view (for admin, viewer, or unmapped roles)
-  return (
-    <div style={{ marginTop: 16 }}>
-      <div className="admin-grid" style={{ marginBottom: 16 }}>
-        <div className="card admin-metric"><div className="metric-icon"><Users size={18} /></div><div><p>Total voters</p><h3>{stats.total_voters}</h3></div></div>
-        <div className="card admin-metric"><div className="metric-icon"><VoteIcon size={18} /></div><div><p>Votes cast</p><h3>{stats.votes_cast}</h3></div></div>
-        <div className="card admin-metric"><div className="metric-icon"><Activity size={18} /></div><div><p>Turnout</p><h3>{stats.turnout}%</h3></div></div>
-        <div className="card admin-metric"><div className="metric-icon"><AlertTriangle size={18} /></div><div><p>Pending review</p><h3 style={{ color: stats.pending > 0 ? "var(--danger)" : "inherit" }}>{stats.pending}</h3></div></div>
-      </div>
-      <div className="admin-panels">
-        <div className="card admin-panel">
-          <div className="card-header"><div><h2 className="card-title">Operational status</h2><p className="card-subtitle">All core services reporting healthy.</p></div><span className="admin-pill success">Healthy</span></div>
-          <div className="admin-list">
-            {["Identity verification","Face recognition","Ballot ledger sync","Security monitoring","Rate limiting","Account lockout"].map(s => (
-              <div key={s} className="admin-row"><span>{s}</span><span className="admin-pill success">Active</span></div>
-            ))}
-          </div>
-        </div>
-        <div className="card admin-panel">
-          <div className="card-header"><div><h2 className="card-title">Election integrity</h2><p className="card-subtitle">Current safeguards and audit checks.</p></div><span className="admin-pill neutral">Protected</span></div>
-          <div className="admin-list">
-            {["Duplicate registration blocks","Face recognition anti-fraud","Receipt verification","Input validation (CNIC/phone)","CORS lockdown","Audit logging"].map(s => (
-              <div key={s} className="admin-row"><span>{s}</span><span className="admin-pill success">Active</span></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -1329,7 +997,7 @@ function AdminPage() {
   const [flagReason, setFlagReason] = useState({});
   const [pendingVoters, setPendingVoters] = useState([]);
   const [candidates, setCandidates] = useState([]);
-  const [candidateForm, setCandidateForm] = useState({ name: "", party: "", district: "", symbol: "", unique_key: "" });
+  const [candidateForm, setCandidateForm] = useState({ name: "", party: "", district: "", symbol: "", unique_key: "", election_id: "" });
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [voteRecords, setVoteRecords] = useState([]);
   const [votesLoading, setVotesLoading] = useState(false);
@@ -1348,7 +1016,7 @@ function AdminPage() {
   const [showDistrictForm, setShowDistrictForm] = useState(false);
   const [elections, setElections] = useState([]);
   const [electionsLoading, setElectionsLoading] = useState(false);
-  const [electionForm, setElectionForm] = useState({ title: '', date: '', status: 'Upcoming' });
+  const [electionForm, setElectionForm] = useState({ title: '', date: '', end_time: '' });
   const [electionFormLoading, setElectionFormLoading] = useState(false);
   const [showElectionForm, setShowElectionForm] = useState(false);
   const [blockchainNodes, setBlockchainNodes] = useState([]);
@@ -1731,6 +1399,14 @@ function AdminPage() {
     if (tab === "Audit Dashboard") loadAuditDashboard();
     if (tab === "Audit Logs" && auditLogsData.length === 0) loadAuditLogs();
     if (tab === "Suspicious") loadSuspicious();
+
+    let interval;
+    if (tab === "Elections") {
+      interval = setInterval(loadElections, 10000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [tab]);
 
   const loadAuditLogs = async () => {
@@ -1916,11 +1592,12 @@ function AdminPage() {
       // Convert date string to ISO
       const payload = {
         ...electionForm,
-        date: new Date(electionForm.date).toISOString()
+        date: new Date(electionForm.date).toISOString(),
+        end_time: electionForm.end_time ? new Date(electionForm.end_time).toISOString() : null,
       };
       await API.post("/admin/elections/", payload);
       toast.success('Election created successfully');
-      setElectionForm({ title: '', date: '', status: 'Upcoming' });
+      setElectionForm({ title: '', date: '', end_time: '' });
       setShowElectionForm(false);
       loadElections();
     } catch (err) {
@@ -2179,7 +1856,7 @@ function AdminPage() {
         await API.post("/candidates", candidateForm);
         toast.success("Candidate created");
       }
-      setCandidateForm({ name: "", party: "", district: "", symbol: "", unique_key: "" });
+      setCandidateForm({ name: "", party: "", district: "", symbol: "", unique_key: "", election_id: "" });
       setEditingCandidate(null);
       loadCandidates();
     } catch (error) {
@@ -2203,7 +1880,7 @@ function AdminPage() {
 
   const handleCancelEditCandidate = () => {
     setEditingCandidate(null);
-    setCandidateForm({ name: "", party: "", district: "", symbol: "", unique_key: "" });
+    setCandidateForm({ name: "", party: "", district: "", symbol: "", unique_key: "", election_id: "" });
   };
 
   const handleDeleteCandidate = async (candidateId) => {
@@ -2367,7 +2044,7 @@ function AdminPage() {
 
       {/* ── DASHBOARD TAB ── */}
       {tab === "Dashboard" && (
-        <RoleBasedDashboard userRole={userRole} setTab={setTab} stats={stats} voters={allVoters || []} />
+        <AdminDashboardTab userRole={userRole} setTab={setTab} stats={stats} voters={allVoters || []} />
       )}
 
       {/* ── AUDIT DASHBOARD TAB ── */}
@@ -2595,116 +2272,22 @@ function AdminPage() {
 
       {/* ── CANDIDATES TAB ── */}
       {tab === "Candidates" && (
-        <div style={{ marginTop: 16, display: "grid", gap: 16 }}>
-          <div className="card admin-panel">
-            <div className="card-header">
-              <div><h2 className="card-title">{editingCandidate ? <Edit size={16} /> : <PlusCircle size={16} />} {editingCandidate ? "Edit candidate" : "Add candidate"}</h2><p className="card-subtitle">{editingCandidate ? "Update the candidate details." : "Add a candidate using the new admin API."}</p></div>
-            </div>
-            <form className="form-grid" onSubmit={handleSaveCandidate}>
-              <div className="form-group">
-                <label className="form-label">Name</label>
-                <input className="input" name="name" value={candidateForm.name} onChange={handleCandidateChange} placeholder="e.g. Candidate Name" required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Party</label>
-                <input className="input" name="party" value={candidateForm.party} onChange={handleCandidateChange} placeholder="e.g. Independent / Party Name" required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">District</label>
-                <input className="input" name="district" value={candidateForm.district} onChange={handleCandidateChange} placeholder="e.g. District 1 / Constituency" required />
-              </div>
-              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                <label className="form-label">Symbol</label>
-                <button type="button" className="input" onClick={() => setShowSymbolPicker(p => !p)} style={{ cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
-                  {candidateForm.symbol ? <span style={{ fontSize: 20 }}>{candidateForm.symbol}</span> : <span style={{ color: "var(--muted)" }}>Select a symbol...</span>}
-                </button>
-                {showSymbolPicker && (
-                  <div style={{ marginTop: 8, background: "var(--card-bg, #fff)", border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6 }}>
-                      {[
-                        { emoji: "🦅", label: "Eagle" },
-                        { emoji: "🐅", label: "Tiger" },
-                        { emoji: "🦁", label: "Lion" },
-                        { emoji: "🐘", label: "Elephant" },
-                        { emoji: "🐎", label: "Horse" },
-                        { emoji: "⚔️", label: "Sword" },
-                        { emoji: "🏏", label: "Bat" },
-                        { emoji: "🏹", label: "Arrow" },
-                        { emoji: "⚖️", label: "Scale" },
-                        { emoji: "🌙", label: "Crescent" },
-                        { emoji: "⭐", label: "Star" },
-                        { emoji: "🌳", label: "Tree" },
-                        { emoji: "🔔", label: "Bell" },
-                        { emoji: "📖", label: "Book" },
-                        { emoji: "🕊️", label: "Dove" },
-                        { emoji: "🏠", label: "House" },
-                        { emoji: "🚜", label: "Tractor" },
-                        { emoji: "✋", label: "Hand" },
-                        { emoji: "🔑", label: "Key" },
-                        { emoji: "🛡️", label: "Shield" },
-                        { emoji: "⚡", label: "Lightning" },
-                        { emoji: "🔥", label: "Flame" },
-                        { emoji: "💎", label: "Diamond" },
-                        { emoji: "🌾", label: "Wheat" },
-                        { emoji: "☪️", label: "Moon & Star" },
-                        { emoji: "🗳️", label: "Ballot Box" },
-                        { emoji: "🏛️", label: "Parliament" },
-                        { emoji: "🤝", label: "Handshake" },
-                        { emoji: "🎯", label: "Target" },
-                        { emoji: "🏆", label: "Trophy" }
-                      ].map(s => (
-                        <button key={s.label} type="button" onClick={() => { setCandidateForm(p => ({ ...p, symbol: s.emoji })); setShowSymbolPicker(false); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: candidateForm.symbol === s.emoji ? "2px solid #0f766e" : "1px solid var(--border)", background: candidateForm.symbol === s.emoji ? "rgba(15,118,110,0.08)" : "transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, transition: "all 0.15s" }}>
-                          <span style={{ fontSize: 18 }}>{s.emoji}</span> {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="form-group">
-                <label className="form-label">Unique Key <span style={{ color: "var(--muted)", fontWeight: 400 }}>(Duplicate Prevention)</span></label>
-                <input className="input" name="unique_key" value={candidateForm.unique_key} onChange={handleCandidateChange} placeholder="e.g. CNIC / Bar License No / Unique ID" required />
-              </div>
-              <div className="form-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button className={`button${candidateLoading ? " is-loading" : ""}`} type="submit">{candidateLoading ? "Saving..." : editingCandidate ? "Update candidate" : "Add candidate"}</button>
-                {editingCandidate && (
-                  <button type="button" className="button secondary" onClick={handleCancelEditCandidate}>Cancel</button>
-                )}
-                <span className="form-hint" style={{ marginLeft: "auto" }}>Uses {editingCandidate ? "PUT" : "POST"} /candidates.</span>
-              </div>
-            </form>
-          </div>
-
-          <div className="card admin-panel">
-            <div className="card-header">
-              <div><h2 className="card-title"><Trash2 size={16} /> Candidate list</h2><p className="card-subtitle">Delete candidates from the same panel.</p></div>
-              <button className="button" style={{ fontSize: 12 }} onClick={loadCandidates}><RefreshCw size={13} /> Refresh</button>
-            </div>
-            <div className="admin-list">
-              {candidates.length === 0 ? (
-                <div className="admin-row"><span style={{ color: "var(--muted)" }}>No candidates available.</span></div>
-              ) : candidates.map((candidate, idx) => (
-                <div key={candidate.id || candidate.candidate_id || idx} className="admin-row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(15,118,110,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
-                    {candidate.symbol || candidate.symbol_name || "🗳️"}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 180 }}>
-                    <strong>{candidate.name || candidate.full_name || candidate.candidate_name || candidate.title || "Candidate"}</strong>
-                    <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>{candidate.party || candidate.party_name || ""}</span>
-                    <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>{candidate.district || candidate.constituency || candidate.district_id || "-"}</span>
-                  </div>
-                  <span className="admin-pill neutral">Votes {candidate.votes ?? 0}</span>
-                  <button className="button secondary" style={{ fontSize: 12 }} onClick={() => handleEditCandidateClick(candidate)}>
-                    <Edit size={13} /> Edit
-                  </button>
-                  <button className="button secondary" style={{ fontSize: 12 }} onClick={() => handleDeleteCandidate(candidate.id || candidate.candidate_id)}>
-                    <Trash2 size={13} /> Delete
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <AdminCandidatesTab 
+          editingCandidate={editingCandidate}
+          candidateForm={candidateForm}
+          handleCandidateChange={handleCandidateChange}
+          handleSaveCandidate={handleSaveCandidate}
+          elections={elections}
+          showSymbolPicker={showSymbolPicker}
+          setShowSymbolPicker={setShowSymbolPicker}
+          setCandidateForm={setCandidateForm}
+          candidateLoading={candidateLoading}
+          handleCancelEditCandidate={handleCancelEditCandidate}
+          loadCandidates={loadCandidates}
+          candidates={candidates}
+          handleEditCandidateClick={handleEditCandidateClick}
+          handleDeleteCandidate={handleDeleteCandidate}
+        />
       )}
 
       {/* ── PENDING TAB ── */}
@@ -3576,32 +3159,10 @@ function AdminPage() {
       )}
 
       {tab === "Voters" && (
-        <div className="card admin-panel" style={{ marginTop: 16 }}>
-          <div className="card-header">
-            <div>
-              <h2 className="card-title"><UserX size={16} /> Voter registry</h2>
-              <p className="card-subtitle">Loaded from GET /admin/voters. Records found: {allVoters.length}</p>
-            </div>
-            <button className="button" style={{ fontSize: 12 }} onClick={loadAllVoters}><RefreshCw size={13} /> Refresh</button>
-          </div>
-          <div className="admin-list" style={{ marginTop: 16 }}>
-            {allVoters.map((voter, idx) => (
-              <div key={voter.voter_id || voter.id || idx} className="admin-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 220 }}>
-                  <strong>{voter.full_name || voter.name || voter.cnic || "Voter"}</strong>
-                  <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>{voter.cnic || voter.bar_number || "-"}</span>
-                  <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>{voter.constituency || voter.district || "-"}</span>
-                </div>
-                <span className={`admin-pill ${voter.has_voted ? "success" : "neutral"}`}>
-                  {voter.has_voted ? "Voted" : "Not voted"}
-                </span>
-                <span className={`admin-pill ${voter.is_pending ? "warning" : "success"}`}>
-                  {voter.is_pending ? "Pending" : "Clear"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AdminVotersTab 
+          allVoters={allVoters}
+          loadAllVoters={loadAllVoters}
+        />
       )}
 
       {tab === "Votes" && (
@@ -3870,74 +3431,18 @@ function AdminPage() {
       )}
 
       {tab === "Elections" && (
-        <div className="card admin-panel" style={{ marginTop: 16 }}>
-          <div className="card-header">
-            <div>
-              <h2 className="card-title"><Calendar size={16} /> Elections Management</h2>
-              <p className="card-subtitle">Manage upcoming and ongoing elections.</p>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="button" style={{ fontSize: 12 }} onClick={() => setShowElectionForm(!showElectionForm)}>
-                <PlusCircle size={13} /> {showElectionForm ? "Cancel" : "New Election"}
-              </button>
-              <button className="button secondary" style={{ fontSize: 12 }} onClick={loadElections}>
-                <RefreshCw size={13} /> Refresh
-              </button>
-            </div>
-          </div>
-          
-          {showElectionForm && (
-            <form onSubmit={handleCreateElection} className="form-grid" style={{ padding: 16, borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.02)" }}>
-              <div className="form-group">
-                <label className="form-label">Election Title</label>
-                <input className="input" value={electionForm.title} onChange={e => setElectionForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g. General Election 2026" required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Date</label>
-                <input type="datetime-local" className="input" value={electionForm.date} onChange={e => setElectionForm(p => ({ ...p, date: e.target.value }))} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Status</label>
-                <select className="input" value={electionForm.status} onChange={e => setElectionForm(p => ({ ...p, status: e.target.value }))}>
-                  <option value="Upcoming">Upcoming</option>
-                  <option value="Active">Active</option>
-                  <option value="Completed">Completed</option>
-                </select>
-              </div>
-              <div className="form-actions" style={{ display: "flex", alignItems: "flex-end" }}>
-                <button type="submit" className={`button ${electionFormLoading ? "is-loading" : ""}`} disabled={electionFormLoading}>
-                  {electionFormLoading ? "Creating..." : "Create Election"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {electionsLoading && elections.length === 0 ? (
-            <div className="results-loading"><div className="loading-bar"/><div className="loading-bar"/></div>
-          ) : elections.length === 0 ? (
-            <div className="empty-state" style={{ marginTop: 16 }}>
-              <div className="empty-icon"><Calendar size={32} /></div>
-              <h3>No elections found</h3>
-            </div>
-          ) : (
-            <div className="admin-list" style={{ marginTop: 16 }}>
-              {elections.map(election => (
-                <div key={election.election_id} className="admin-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <strong>{election.title}</strong>
-                    <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>{new Date(election.date).toLocaleString()}</span>
-                  </div>
-                  <span className={`admin-pill ${election.status === 'Active' ? 'success' : election.status === 'Completed' ? 'neutral' : 'warning'}`}>
-                    {election.status}
-                  </span>
-                  <button className="button secondary" style={{ fontSize: 12 }} onClick={() => handleDeleteElection(election.election_id)}>
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <AdminElectionsTab 
+          showElectionForm={showElectionForm}
+          setShowElectionForm={setShowElectionForm}
+          loadElections={loadElections}
+          handleCreateElection={handleCreateElection}
+          electionForm={electionForm}
+          setElectionForm={setElectionForm}
+          electionFormLoading={electionFormLoading}
+          electionsLoading={electionsLoading}
+          elections={elections}
+          handleDeleteElection={handleDeleteElection}
+        />
       )}
 
       {tab === "Blockchain" && (

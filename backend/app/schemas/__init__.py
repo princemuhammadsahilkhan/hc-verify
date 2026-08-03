@@ -49,6 +49,7 @@ class CandidateCreateSchema(BaseModel):
     district: str
     symbol: Optional[str] = None
     unique_key: Optional[str] = None
+    election_id: Optional[str] = None
 
 class CandidateUpdateSchema(BaseModel):
     name: Optional[str] = None

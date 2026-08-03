@@ -1,3 +1,4 @@
+from fastapi.security import HTTPAuthorizationCredentials
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,4 +111,4 @@ async def delete_setting(setting_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Setting not found.")
     await db.delete(setting)
     await db.commit()
-
+

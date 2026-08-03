@@ -29,28 +29,6 @@ function Navbar() {
             <Link className="nav-link" to="/admin-login"><Settings size={16} />{t.adminLogin}</Link>
           )}
 
-          {/* Language switcher */}
-          <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-            {Object.entries(LANGUAGES).map(([code, meta]) => (
-              <button
-                key={code}
-                onClick={() => switchLang(code)}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  background: lang === code ? "var(--primary)" : "transparent",
-                  color: lang === code ? "#fff" : "var(--text)",
-                  fontWeight: lang === code ? 700 : 400,
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                {meta.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
     </nav>

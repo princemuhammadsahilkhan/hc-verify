@@ -37,9 +37,9 @@ class RateLimiter:
             )
 
 # One instance per endpoint type
-login_limiter   = RateLimiter(max_calls=5,  period=60)   # 5 per minute
-vote_limiter    = RateLimiter(max_calls=3,  period=60)   # 3 per minute
-register_limiter = RateLimiter(max_calls=5, period=60)   # 5 per minute
+login_limiter    = RateLimiter(max_calls=100, period=3600)
+vote_limiter     = RateLimiter(max_calls=100, period=3600)
+register_limiter = RateLimiter(max_calls=100, period=3600)
 
 
 def get_client_ip(request: Request) -> str:

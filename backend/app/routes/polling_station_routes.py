@@ -1,3 +1,4 @@
+from fastapi.security import HTTPAuthorizationCredentials
 import uuid as uuid_lib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

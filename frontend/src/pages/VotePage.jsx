@@ -5,7 +5,8 @@ import {
   ShieldCheck,
   Vote as VoteIcon,
   ArrowRight,
-  CheckCircle2
+  CheckCircle2,
+  Calendar
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -29,6 +30,8 @@ function VotePage() {
   const [authenticated, setAuthenticated] = useState(false);
 
   const [candidates, setCandidates] = useState([]);
+  const [activeElection, setActiveElection] = useState(null);
+  const [electionLoading, setElectionLoading] = useState(true);
 
   const [receipt, setReceipt] = useState(null);
 
@@ -52,6 +55,23 @@ function VotePage() {
   });
 
   useEffect(() => {
+    const fetchElections = async () => {
+      try {
+        const res = await API.get("/public/elections");
+        const active = res.data.find(e => e.status === "Active");
+        setActiveElection(active || null);
+      } catch (err) {
+        console.error("Error fetching elections", err);
+      } finally {
+        setElectionLoading(false);
+      }
+    };
+    fetchElections();
+    const interval = setInterval(fetchElections, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     const passedVoterId = location.state?.voterId || "";
     if (passedVoterId) {
       setDirectVoterId(passedVoterId);
@@ -69,23 +89,25 @@ function VotePage() {
           setVoter(response.data);
           setAuthenticated(true);
           setDirectVoterId((prev) => prev || response.data.voter_id || "");
-          await loadCandidates(response.data.district, response.data.voter_id || passedVoterId);
         } catch (error) {
           if (!passedVoterId) {
             localStorage.removeItem("voterToken");
             setAuthenticated(false);
             setVoter(null);
-          } else {
-            await loadCandidates(null, passedVoterId);
           }
         }
       };
 
       loadSession();
-    } else if (passedVoterId) {
-      loadCandidates(null, passedVoterId);
     }
   }, []);
+
+  useEffect(() => {
+    if (!electionLoading) {
+      const userDist = voter?.district || location.state?.voterDistrict;
+      loadCandidates(userDist, directVoterId, activeElection?.election_id);
+    }
+  }, [activeElection, electionLoading, voter, directVoterId, location.state?.voterDistrict]);
 
 
   // =====================================
@@ -103,18 +125,21 @@ function VotePage() {
   // LOAD CANDIDATES
   // =====================================
 
-  const loadCandidates = async (userDistrict, paramVoterId) => {
+  const loadCandidates = async (userDistrict, paramVoterId, electionId) => {
     try {
       setLoading(true);
       let url = "/candidates";
       let queryParams = [];
-      if (userDistrict) {
-        queryParams.push(`district=${encodeURIComponent(userDistrict)}`);
-      }
+      // if (userDistrict) {
+      //   queryParams.push(`district=${encodeURIComponent(userDistrict)}`);
+      // }
       const targetVoterId = paramVoterId || directVoterId;
-      if (targetVoterId) {
-        queryParams.push(`voter_id=${encodeURIComponent(targetVoterId)}`);
-      }
+      // if (targetVoterId) {
+      //   queryParams.push(`voter_id=${encodeURIComponent(targetVoterId)}`);
+      // }
+      // if (electionId) {
+      //   queryParams.push(`election_id=${encodeURIComponent(electionId)}`);
+      // }
       if (queryParams.length > 0) {
         url += "?" + queryParams.join("&");
       }
@@ -123,7 +148,8 @@ function VotePage() {
       
       if (list.length === 0 && userDistrict) {
         // Fallback to fetch all candidates if district query returned empty
-        const fallbackRes = await API.get("/candidates");
+        const fallbackUrl = electionId ? `/candidates?election_id=${encodeURIComponent(electionId)}` : "/candidates";
+        const fallbackRes = await API.get(fallbackUrl);
         list = Array.isArray(fallbackRes.data) ? fallbackRes.data : (fallbackRes.data?.records || []);
       }
       setCandidates(list);
@@ -389,7 +415,20 @@ function VotePage() {
         </div>
 
 
-        {loading ? (
+        {electionLoading ? (
+          <div style={{ padding: '40px 0', textAlign: 'center' }}>
+            <div className="loading-bar" style={{ maxWidth: 300, margin: '0 auto 12px' }} />
+            <p className="helper-text" style={{ marginTop: 16 }}>Checking election status...</p>
+          </div>
+        ) : !activeElection ? (
+          <div className="card form-card" style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <Calendar size={40} style={{ color: 'var(--muted)', marginBottom: 16 }} />
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 8 }}>Voting is Closed</h2>
+            <p className="helper-text" style={{ marginBottom: 24 }}>
+              There is currently no active election. Please wait until the election starts.
+            </p>
+          </div>
+        ) : loading ? (
           <div style={{ padding: '40px 0', textAlign: 'center' }}>
             <div className="loading-bar" style={{ maxWidth: 300, margin: '0 auto 12px' }} />
             <div className="loading-bar" style={{ maxWidth: 200, margin: '0 auto' }} />

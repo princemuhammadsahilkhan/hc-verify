@@ -9,7 +9,7 @@ import uuid
 import random
 import string
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from jose import jwt, JWTError
 from pydantic import BaseModel
@@ -30,7 +30,8 @@ from app.models import (
     Candidate,
     Vote,
     AuditLog,
-    District
+    District,
+    Election
 )
 
 from app.schemas import (
@@ -50,6 +51,11 @@ from app.utils.jwt_handler import (
 )
 
 load_dotenv()
+from app.dependencies import require_admin, security, get_current_voter, create_admin_token, ADMIN_USERNAME, ADMIN_PASSWORD
+from app.routes.voter_auth_routes import router as voter_auth_router
+from app.routes.candidate_routes import router as candidate_router
+from app.routes.vote_routes import router as vote_router
+from app.routes.results_routes import router as results_router
 
 from app.face_service import extract_embedding, match_faces
 from app.security_middleware import (
@@ -71,13 +77,6 @@ from app.admin_recovery import (
 app = FastAPI()
 
 
-security = HTTPBearer(auto_error=False)
-
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin")
-ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "hcverify-admin-secret")
-ADMIN_TOKEN_ALGORITHM = "HS256"
-ADMIN_TOKEN_EXPIRES_HOURS = 8
 
 
 class AdminLoginSchema(BaseModel):
@@ -135,111 +134,6 @@ def ensure_phase_one_schema(conn):
             message = str(exc).lower()
             if "duplicate column name" not in message and "already exists" not in message:
                 raise
-
-
-def create_admin_token(sub, role_name, level, permissions=None, is_env_bypass=False):
-    payload = {
-        "sub": sub,
-        "role_name": role_name,
-        "level": level,
-        "permissions": permissions or [],
-        "is_env_bypass": is_env_bypass,
-        "exp": datetime.utcnow() + timedelta(hours=12)
-    }
-    return jwt.encode(payload, ADMIN_JWT_SECRET, algorithm=ADMIN_TOKEN_ALGORITHM)
-
-
-async def require_admin(
-
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
-
-):
-
-    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
-
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Admin credentials not configured"
-        )
-
-    if not credentials:
-
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-
-    try:
-
-        payload = jwt.decode(
-            credentials.credentials,
-            ADMIN_JWT_SECRET,
-            algorithms=[ADMIN_TOKEN_ALGORITHM]
-        )
-
-    except JWTError:
-
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-
-    role = payload.get("role_name") or payload.get("role")
-    level = payload.get("level")
-    
-    # Check against database for DB users
-    if not payload.get("is_env_bypass"):
-        from app.models import User, Role
-        sub_val = str(payload.get("sub") or "")
-        res = await db.execute(select(User).where((User.username.ilike(sub_val)) | (User.email.ilike(sub_val))))
-        user = res.scalars().first()
-        if user:
-            role_res = await db.execute(select(Role).where(Role.role_id == user.role_id))
-            role_obj = role_res.scalars().first()
-            if role_obj:
-                payload["level"] = role_obj.level or 100
-                payload["role_name"] = role_obj.role_name
-            else:
-                payload["level"] = payload.get("level") or 100
-        else:
-            payload["level"] = payload.get("level") or 100
-    
-    return payload
-
-
-def get_current_voter(credentials: HTTPAuthorizationCredentials = Depends(security)):
-
-    if not credentials:
-
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-
-    try:
-
-        payload = jwt.decode(
-            credentials.credentials,
-            VOTER_JWT_SECRET,
-            algorithms=[VOTER_JWT_ALGORITHM]
-        )
-
-    except JWTError:
-
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-
-    if payload.get("role") != "voter":
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
-
-    return payload
 
 
 # =====================================
@@ -468,226 +362,17 @@ async def admin_login(credentials: AdminLoginSchema, request: Request, db: Async
 # AUTH REGISTER
 # =====================================
 
-@app.post("/auth/register")
-async def auth_register(
-
-    voter: AuthRegisterSchema,
-
-    db: AsyncSession = Depends(get_db)
-
-):
-    existing_email = await db.execute(
-        select(Voter).where(Voter.email == voter.email)
-    )
-
-    if existing_email.scalars().first():
-
-        raise HTTPException(status_code=400, detail="Email already exists")
-
-    voter_id = uuid.uuid4()
-
-    new_voter = Voter(
-
-        voter_id=voter_id,
-
-        full_name=voter.full_name,
-
-        email=voter.email,
-
-        password=hash_password(voter.password),
-
-        cnic="AUTH-" + ''.join(
-
-            random.choices(
-
-                string.ascii_uppercase + string.digits,
-
-                k=10
-
-            )
-
-        ),
-
-        district=voter.district,
-
-        phone=voter.phone or "",
-
-        constituency=voter.constituency or voter.district,
-
-    )
-
-    new_voter.registration_hash = calculate_registration_hash(
-        new_voter.voter_id,
-        new_voter.cnic,
-        new_voter.full_name
-    )
-
-    db.add(new_voter)
-
-    await db.commit()
-
-    return {
-
-        "success": True,
-
-        "message": "User registered successfully",
-
-    }
-
-
 # =====================================
 # AUTH LOGIN
 # =====================================
-
-@app.post("/auth/login")
-async def auth_login(
-
-    user: LoginSchema,
-
-    db: AsyncSession = Depends(get_db)
-
-):
-    result = await db.execute(
-        select(Voter).where(
-            (Voter.membership_type == user.email) | (Voter.bar_number == user.email)
-        )
-    )
-
-    voter = result.scalars().first()
-
-    if not voter or not voter.password:
-
-        raise HTTPException(status_code=400, detail="Invalid email")
-
-    if not verify_password(user.password, voter.password):
-
-        raise HTTPException(status_code=400, detail="Invalid password")
-
-    token = create_access_token(
-        data={
-            "sub": voter.email,
-            "role": "voter",
-            "voter_id": str(voter.voter_id),
-        }
-    )
-
-    return {
-
-        "access_token": token,
-
-        "token_type": "bearer"
-
-    }
-
 
 # =====================================
 # AUTH ME
 # =====================================
 
-@app.get("/auth/me")
-async def auth_me(
-
-    token_data: dict = Depends(get_current_voter),
-
-    db: AsyncSession = Depends(get_db)
-
-):
-
-    voter_id = token_data.get("voter_id")
-
-    result = await db.execute(
-        select(Voter).where(Voter.voter_id == voter_id)
-    )
-
-    voter = result.scalars().first()
-
-    if not voter:
-
-        raise HTTPException(status_code=404, detail="Voter not found")
-
-    return {
-
-        "id": voter.id,
-
-        "voter_id": voter.voter_id,
-
-        "full_name": voter.full_name,
-
-        "email": voter.email,
-
-        "cnic": voter.cnic,
-
-        "district": voter.district,
-
-        "is_verified": voter.is_verified,
-
-        "has_voted": voter.has_voted,
-
-        "created_at": voter.created_at,
-
-    }
-
-
 # =====================================
 # UPDATE AUTH PROFILE
 # =====================================
-
-@app.put("/auth/me")
-async def update_auth_me(
-
-    payload: AuthUpdateSchema,
-
-    token_data: dict = Depends(get_current_voter),
-
-    db: AsyncSession = Depends(get_db)
-
-):
-    voter_id = token_data.get("voter_id")
-
-    result = await db.execute(
-        select(Voter).where(Voter.voter_id == voter_id)
-    )
-
-    voter = result.scalars().first()
-
-    if not voter:
-        raise HTTPException(status_code=404, detail="Voter not found")
-
-    if payload.email and payload.email != voter.email:
-        existing_email = await db.execute(
-            select(Voter).where(Voter.email == payload.email)
-        )
-        if existing_email.scalars().first():
-            raise HTTPException(status_code=400, detail="Email already exists")
-        voter.email = payload.email
-
-    if payload.full_name:
-        voter.full_name = payload.full_name
-
-    if payload.district:
-        voter.district = payload.district
-
-    if payload.password:
-        voter.password = hash_password(payload.password)
-
-    await db.commit()
-    await db.refresh(voter)
-
-    return {
-        "success": True,
-        "message": "Profile updated successfully",
-        "voter": {
-            "id": voter.id,
-            "voter_id": voter.voter_id,
-            "full_name": voter.full_name,
-            "email": voter.email,
-            "district": voter.district,
-            "is_verified": voter.is_verified,
-            "has_voted": voter.has_voted,
-            "created_at": voter.created_at,
-        },
-    }
-
 
 # =====================================
 # REGISTER VOTER
@@ -850,509 +535,29 @@ async def register_voter(
 # GET ALL VOTERS
 # =====================================
 
-@app.get("/voters")
-async def get_voters(
-
-    db: AsyncSession = Depends(get_db)
-
-):
-
-    result = await db.execute(
-        select(Voter)
-    )
-
-    return result.scalars().all()
-
-
 # =====================================
 # AUTHENTICATE VOTER
 # =====================================
-
-@app.get("/authenticate/{voter_id}")
-async def authenticate_voter(
-
-    voter_id: str,
-
-    db: AsyncSession = Depends(get_db)
-
-):
-
-    result = await db.execute(
-
-        select(Voter).where(
-            Voter.voter_id == voter_id
-        )
-    )
-
-    voter = result.scalars().first()
-
-    if not voter:
-
-        return {
-
-            "success": False,
-
-            "message": "Invalid voter ID"
-        }
-
-    if voter.has_voted:
-
-        return {
-
-            "success": False,
-
-            "message": "Vote already cast"
-        }
-
-    return {
-
-        "success": True,
-
-        "message": "Authentication successful",
-
-        "voter": {
-
-            "name": voter.full_name,
-
-            "constituency": voter.constituency
-        }
-    }
-
 
 # =====================================
 # GET CANDIDATES
 # =====================================
 
-@app.get("/candidates")
-async def get_candidates(
-    district: str = None,
-    voter_id: str = None,
-    db: AsyncSession = Depends(get_db)
-):
-
-    target_district_id = None
-    target_district_name = None
-
-    if voter_id:
-        try:
-            v_uuid = uuid.UUID(str(voter_id))
-            v_res = await db.execute(select(Voter).where((Voter.voter_id == v_uuid) | (Voter.voter_id == voter_id)))
-        except Exception:
-            v_res = await db.execute(select(Voter).where(Voter.voter_id == voter_id))
-        v_obj = v_res.scalars().first()
-        if v_obj:
-            if v_obj.district_id:
-                target_district_id = v_obj.district_id
-            if v_obj.district:
-                target_district_name = v_obj.district.lower().strip()
-
-    if district:
-        target_district_name = district.lower().strip()
-
-    try:
-        result = await db.execute(
-            select(Candidate)
-        )
-        all_candidates = result.scalars().all()
-    except Exception:
-        # Fallback: if unique_key column doesn't exist yet, select without it
-        await db.rollback()
-        from sqlalchemy import text
-        raw = await db.execute(text("SELECT candidate_id, full_name, party_name, symbol_name, district_id, election_id, bar_number, photo_url, public_key FROM candidates"))
-        rows = raw.fetchall()
-        class _C:
-            pass
-        all_candidates = []
-        for r in rows:
-            c = _C()
-            c.candidate_id = r[0]; c.full_name = r[1]; c.party_name = r[2]; c.symbol_name = r[3]; c.district_id = r[4]
-            all_candidates.append(c)
-
-    districts_res = await db.execute(select(District))
-    districts_map = {d.district_id: d.district_name for d in districts_res.scalars().all()}
-
-    filtered_candidates = []
-    for c in all_candidates:
-        c_district_name = districts_map.get(c.district_id, "").lower().strip()
-        c_district_id = c.district_id
-        
-        if target_district_id or target_district_name:
-            matches_id = target_district_id and c_district_id and str(target_district_id) == str(c_district_id)
-            matches_name = target_district_name and c_district_name and target_district_name == c_district_name
-            if matches_id or matches_name:
-                filtered_candidates.append(c)
-        else:
-            filtered_candidates.append(c)
-
-    return [
-        {
-            "id": str(c.candidate_id),
-            "candidate_id": str(c.candidate_id),
-            "name": c.full_name,
-            "party": c.party_name,
-            "symbol": c.symbol_name,
-            "district": districts_map.get(c.district_id, str(c.district_id) if c.district_id else ""),
-            "district_id": str(c.district_id) if c.district_id else "",
-            "constituency": districts_map.get(c.district_id, str(c.district_id) if c.district_id else ""),
-            "unique_key": getattr(c, 'unique_key', None) or "",
-            "votes": 0
-        } for c in filtered_candidates
-    ]
-
-
 # =====================================
 # CREATE CANDIDATE
 # =====================================
-
-@app.post("/candidates")
-async def create_candidate(
-    candidate: CandidateCreateSchema,
-    db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    name_clean = (candidate.name or "").strip()
-    if not name_clean:
-        raise HTTPException(status_code=400, detail="Candidate name is required")
-
-    unique_key_clean = (candidate.unique_key or "").strip()
-    if unique_key_clean:
-        try:
-            existing_key = await db.execute(select(Candidate).where(func.lower(Candidate.unique_key) == unique_key_clean.lower()))
-            if existing_key.scalars().first():
-                raise HTTPException(status_code=409, detail=f"A candidate with unique key '{unique_key_clean}' already exists. Duplicate candidates are not allowed.")
-        except HTTPException:
-            raise
-        except Exception:
-            await db.rollback()
-
-    try:
-        existing = await db.execute(select(Candidate).where(func.lower(Candidate.full_name) == name_clean.lower()))
-        existing_cand = existing.scalars().first()
-    except Exception:
-        await db.rollback()
-        existing_cand = None
-        
-    # If no unique key was provided, we do a legacy name-based deduplication
-    if existing_cand and not unique_key_clean:
-        return {
-            "success": True,
-            "message": "Candidate already exists by name",
-            "candidate_id": str(existing_cand.candidate_id),
-            "id": str(existing_cand.candidate_id),
-            "name": existing_cand.full_name,
-            "party": existing_cand.party_name,
-            "symbol": existing_cand.symbol_name
-        }
-
-    district_uuid = None
-    if candidate.district:
-        try:
-            district_uuid = uuid.UUID(candidate.district)
-        except Exception:
-            pass
-
-    new_candidate = Candidate(
-        candidate_id=uuid.uuid4(),
-        full_name=name_clean,
-        party_name=candidate.party or "",
-        symbol_name=candidate.symbol or "Symbol",
-        district_id=district_uuid
-    )
-    if unique_key_clean:
-        try:
-            new_candidate.unique_key = unique_key_clean
-        except Exception:
-            pass
-
-    try:
-        db.add(new_candidate)
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        # Auto-migrate SQLite candidates table if unique_key column is missing
-        try:
-            from sqlalchemy import text
-            await db.execute(text("ALTER TABLE candidates ADD COLUMN unique_key VARCHAR(100)"))
-            await db.commit()
-        except Exception:
-            await db.rollback()
-        
-        new_candidate = Candidate(
-            candidate_id=uuid.uuid4(),
-            full_name=name_clean,
-            party_name=candidate.party or "",
-            symbol_name=candidate.symbol or "Symbol",
-            district_id=district_uuid
-        )
-        db.add(new_candidate)
-        await db.commit()
-
-    return {
-        "success": True,
-        "message": "Candidate created successfully",
-        "candidate_id": str(new_candidate.candidate_id),
-        "id": str(new_candidate.candidate_id),
-        "name": new_candidate.full_name,
-        "party": new_candidate.party_name,
-        "symbol": new_candidate.symbol_name
-    }
-
 
 # =====================================
 # UPDATE CANDIDATE
 # =====================================
 
-@app.put("/candidates/{id}")
-async def update_candidate(
-    id: str,
-    candidate: CandidateCreateSchema,
-    db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    try:
-        cand_uuid = uuid.UUID(id)
-        res = await db.execute(select(Candidate).where(Candidate.candidate_id == cand_uuid))
-    except Exception:
-        res = await db.execute(select(Candidate).where(cast(Candidate.candidate_id, String) == str(id)))
-    
-    cand_obj = res.scalars().first()
-    if not cand_obj:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-
-    if candidate.name:
-        cand_obj.full_name = candidate.name
-    if candidate.party:
-        cand_obj.party_name = candidate.party
-    if candidate.symbol:
-        cand_obj.symbol_name = candidate.symbol
-    if candidate.unique_key:
-        try:
-            cand_obj.unique_key = candidate.unique_key
-        except Exception:
-            pass
-
-    await db.commit()
-    return {"success": True, "message": "Candidate updated successfully"}
-
-
 # =====================================
 # DELETE CANDIDATE
 # =====================================
 
-@app.delete("/candidates/{id}")
-async def delete_candidate(
-    id: str,
-    db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    try:
-        cand_uuid = uuid.UUID(id)
-        candidate_result = await db.execute(select(Candidate).where(Candidate.candidate_id == cand_uuid))
-    except Exception:
-        candidate_result = await db.execute(select(Candidate).where(cast(Candidate.candidate_id, String) == str(id)))
-
-    candidate = candidate_result.scalars().first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-
-    await db.delete(candidate)
-    await db.commit()
-    return {
-        "success": True,
-        "message": "Candidate deleted successfully",
-    }
-
-
 # =====================================
 # CAST VOTE
 # =====================================
-
-@app.post("/vote")
-async def cast_vote(
-
-    vote: VoteSchema,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-
-):
-    vote_limiter.check(get_client_ip(request))
-
-    voter = None
-
-    if credentials:
-        try:
-            payload = jwt.decode(
-                credentials.credentials,
-                VOTER_JWT_SECRET,
-                algorithms=[VOTER_JWT_ALGORITHM]
-            )
-        except JWTError:
-            return {
-                "success": False,
-                "message": "Invalid token"
-            }
-
-        if payload.get("role") != "voter":
-            return {
-                "success": False,
-                "message": "Not authorized"
-            }
-
-        voter_id = payload.get("voter_id")
-        if voter_id:
-            try:
-                v_uuid = uuid.UUID(str(voter_id))
-                voter_result = await db.execute(
-                    select(Voter).where((Voter.voter_id == v_uuid) | (Voter.voter_id == voter_id))
-                )
-            except Exception:
-                voter_result = await db.execute(
-                    select(Voter).where(Voter.voter_id == voter_id)
-                )
-            voter = voter_result.scalars().first()
-
-    if not voter and vote.voter_id:
-        try:
-            v_uuid = uuid.UUID(str(vote.voter_id))
-            voter_result = await db.execute(
-                select(Voter).where((Voter.voter_id == v_uuid) | (Voter.voter_id == vote.voter_id))
-            )
-        except Exception:
-            voter_result = await db.execute(
-                select(Voter).where(Voter.voter_id == vote.voter_id)
-            )
-        voter = voter_result.scalars().first()
-
-    if not voter:
-
-        return {
-
-            "success": False,
-
-            "message": "Invalid voter"
-        }
-
-    # Prevent double voting
-
-    if voter.has_voted:
-
-        return {
-
-            "success": False,
-
-            "message": "Vote already cast"
-        }
-
-    # Find candidate
-
-    try:
-        c_uuid = uuid.UUID(str(vote.candidate_id))
-        candidate_result = await db.execute(
-            select(Candidate).where(
-                (Candidate.candidate_id == c_uuid) | (Candidate.candidate_id == vote.candidate_id)
-            )
-        )
-    except Exception:
-        candidate_result = await db.execute(
-            select(Candidate).where(
-                Candidate.candidate_id == vote.candidate_id
-            )
-        )
-
-    candidate = candidate_result.scalars().first()
-
-    if not candidate:
-
-        return {
-
-            "success": False,
-
-            "message": "Candidate not found"
-        }
-
-    # Enforce district voting if districts are explicitly assigned to both voter and candidate
-    voter_district_name = (voter.district or voter.constituency or "").strip()
-    if not voter_district_name and voter.district_id:
-        v_dist_res = await db.execute(select(District).where(District.district_id == voter.district_id))
-        v_dist_obj = v_dist_res.scalars().first()
-        if v_dist_obj:
-            voter_district_name = v_dist_obj.district_name.strip()
-
-    candidate_district_name = ""
-    if candidate.district_id:
-        c_dist_res = await db.execute(select(District).where(District.district_id == candidate.district_id))
-        c_dist_obj = c_dist_res.scalars().first()
-        if c_dist_obj:
-            candidate_district_name = c_dist_obj.district_name.strip()
-
-    # Only enforce restriction if both voter and candidate have distinct district names assigned
-    if voter_district_name and candidate_district_name:
-        v_dist_lower = voter_district_name.lower()
-        c_dist_lower = candidate_district_name.lower()
-        if v_dist_lower != "general" and c_dist_lower != "general" and v_dist_lower != c_dist_lower:
-            raise HTTPException(
-                status_code=403,
-                detail=f"You can only vote for candidates from your registered district ({voter_district_name})."
-            )
-
-    # Generate receipt
-
-    receipt_code = "RCPT-" + ''.join(
-
-        random.choices(
-            string.ascii_uppercase + string.digits,
-            k=8
-        )
-    )
-
-    # Generate fake blockchain hash
-
-    blockchain_hash = "0x" + ''.join(
-
-        random.choices(
-            "ABCDEF0123456789",
-            k=32
-        )
-    )
-
-    # Save vote
-
-    new_vote = Vote(
-
-        voter_id=str(voter.voter_id),
-
-        candidate_id=str(candidate.candidate_id),
-
-        receipt_code=receipt_code,
-
-        vote_hash=calculate_vote_hash(str(voter.voter_id), str(candidate.candidate_id), receipt_code),
-
-        blockchain_hash=blockchain_hash,
-
-        timestamp=datetime.utcnow()
-    )
-
-    db.add(new_vote)
-
-    # Update totals
-    candidate.votes = (candidate.votes or 0) + 1
-    voter.has_voted = True
-
-    await db.commit()
-
-    cand_name = getattr(candidate, "full_name", None) or getattr(candidate, "name", "Selected Candidate")
-    cand_symbol = getattr(candidate, "symbol_name", None) or getattr(candidate, "symbol", "🗳️")
-
-    return {
-        "success": True,
-        "message": "Vote cast successfully",
-        "candidate_name": cand_name,
-        "candidate_symbol": cand_symbol,
-        "receipt_code": receipt_code,
-        "blockchain_hash": blockchain_hash
-    }
-
 
 # =====================================
 # =====================================
@@ -1437,39 +642,6 @@ async def verify_vote(
 # =====================================
 
 @app.get("/public/results")
-@app.get("/results")
-async def results(
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(select(Candidate))
-    candidates = result.scalars().all()
-    
-    vote_counts = {}
-    try:
-        vote_result = await db.execute(select(Vote))
-        all_votes = vote_result.scalars().all()
-        for v in all_votes:
-            cid = str(getattr(v, "candidate_id", ""))
-            vote_counts[cid] = vote_counts.get(cid, 0) + 1
-    except Exception:
-        pass
-
-    return [
-        {
-            "id": str(c.candidate_id),
-            "candidate_id": str(c.candidate_id),
-            "name": c.full_name,
-            "full_name": c.full_name,
-            "party": c.party_name,
-            "party_name": c.party_name,
-            "symbol": c.symbol_name or "",
-            "symbol_name": c.symbol_name or "",
-            "district": str(c.district_id) if c.district_id else "",
-            "constituency": str(c.district_id) if c.district_id else "",
-            "votes": vote_counts.get(str(c.candidate_id), 0)
-        } for c in candidates
-    ]
-
 # =====================================
 # RECOVERY METHOD 1 — Recovery Key
 # POST /admin/recover
@@ -2185,6 +1357,24 @@ async def get_public_registrations(
 # PUBLIC VOTE LEDGER
 # GET /public/votes
 # =====================================
+
+@app.get("/public/elections")
+async def get_public_elections(db: AsyncSession = Depends(get_db)):
+    # Returns active and upcoming elections
+    from app.routes.election_routes import _compute_status
+    result = await db.execute(select(Election).order_by(Election.created_at.desc()))
+    elections = result.scalars().all()
+    out = []
+    for e in elections:
+        status = _compute_status(e)
+        out.append({
+            "election_id": str(e.election_id),
+            "title": e.title,
+            "start_time": e.date,
+            "end_time": e.end_time,
+            "status": status
+        })
+    return out
 
 @app.get("/public/votes")
 async def get_public_votes(
@@ -2914,6 +2104,10 @@ from app.routes.voter_routes import router as voter_router
 from app.routes.verify_routes import router as verify_router
 from app.routes.polling_station_routes import router as polling_station_router
 
+app.include_router(voter_auth_router)
+app.include_router(candidate_router)
+app.include_router(vote_router)
+app.include_router(results_router)
 app.include_router(election_router, dependencies=[Depends(require_admin)])
 app.include_router(blockchain_router, dependencies=[Depends(require_admin)])
 app.include_router(user_router, dependencies=[Depends(require_admin)])

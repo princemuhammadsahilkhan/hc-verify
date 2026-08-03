@@ -22,12 +22,19 @@ function HomePage() {
   const [results, setResults] = useState([]);
 
   const [voters, setVoters] = useState([]);
+  const [electionNotice, setElectionNotice] = useState(null);
 
 
   useEffect(() => {
-
     loadData();
-
+    const interval = setInterval(async () => {
+      try {
+        const eleRes = await API.get("/public/elections").catch(() => ({ data: [] }));
+        const activeOrUpcoming = eleRes.data.find(e => e.status === "Active" || e.status === "Upcoming");
+        setElectionNotice(activeOrUpcoming || null);
+      } catch (err) {}
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
 
@@ -42,6 +49,10 @@ function HomePage() {
       const votersRes = await API.get(
         "/voters"
       );
+      
+      const eleRes = await API.get("/public/elections").catch(() => ({ data: [] }));
+      const activeOrUpcoming = eleRes.data.find(e => e.status === "Active" || e.status === "Upcoming");
+      setElectionNotice(activeOrUpcoming || null);
 
       setResults(resultsRes.data);
 
@@ -84,6 +95,23 @@ function HomePage() {
             <ShieldCheck size={16} />
             Live election operations
           </div>
+          
+          {electionNotice && (
+            <div style={{ background: electionNotice.status === 'Active' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', border: `1px solid ${electionNotice.status === 'Active' ? 'var(--success)' : 'var(--warning)'}`, borderRadius: 12, padding: '16px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ background: electionNotice.status === 'Active' ? 'var(--success)' : 'var(--warning)', color: '#fff', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {electionNotice.status === 'Active' ? <Vote size={20} /> : <AlertTriangle size={20} />}
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{electionNotice.title}</h3>
+                <p style={{ margin: 0, fontSize: 14, color: 'var(--muted)' }}>
+                  {electionNotice.status === 'Active' ? 'Voting is now open! Cast your vote before the election closes.' : `Upcoming election starting on ${new Date(electionNotice.start_time).toLocaleString()}.`}
+                </p>
+              </div>
+              {electionNotice.status === 'Active' && (
+                <Link to="/vote" className="button primary" style={{ whiteSpace: 'nowrap' }}>Vote Now</Link>
+              )}
+            </div>
+          )}
 
           <h1 className="hero-title">
             Verifiable voting, built for national scale.
